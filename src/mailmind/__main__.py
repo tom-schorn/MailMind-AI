@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from .ai.claude import ClaudeAnalyzer
 from .config import ConfigError, load_config, setup_logging
 from .imap.client import Email, IMAPClient, IMAPError
+from .logging_format import console
 from .state import StateManager
 from .workflow.runner import WorkflowRunner
 
@@ -21,7 +22,7 @@ stop_event = Event()
 
 def signal_handler(signum, frame):
     """Handle shutdown signals."""
-    logger.info("Shutdown signal received")
+    print("\n Shutdown signal received")
     stop_event.set()
 
 
@@ -39,7 +40,7 @@ def main() -> int:
 
     # Setup logging
     setup_logging(config.log_level)
-    logger.info("MailMind-AI starting")
+    console.info("MailMind-AI starting")
 
     # Setup signal handlers
     signal.signal(signal.SIGINT, signal_handler)
@@ -65,21 +66,10 @@ def main() -> int:
             return
 
         try:
-            result = runner.process_email(email)
+            runner.process_email(email)
             state.mark_analyzed(email.uid)
-
-            if result.is_spam:
-                logger.info(
-                    f"SPAM detected: {email.subject[:50]} "
-                    f"(score: {result.final_score:.2f})"
-                )
-            else:
-                logger.info(
-                    f"Legitimate: {email.subject[:50]} "
-                    f"(score: {result.final_score:.2f})"
-                )
         except Exception as e:
-            logger.error(f"Failed to process email {email.uid}: {e}")
+            console.error(f"Failed to process email {email.uid}: {e}")
 
     # Connect and start watching
     try:
@@ -87,21 +77,21 @@ def main() -> int:
         imap.select_folder()
 
         # Process unanalyzed emails (limited to most recent)
-        logger.info("Checking for unanalyzed emails...")
+        console.status("Checking for unanalyzed emails...")
         all_uids = imap.get_all_uids()
         unanalyzed = [uid for uid in all_uids if not state.is_analyzed(uid)]
 
         # Apply limit (0 = unlimited), take most recent (last in list)
         limit = config.analysis_limit
         if limit > 0 and len(unanalyzed) > limit:
-            logger.info(f"Found {len(unanalyzed)} unanalyzed emails, limiting to {limit} most recent")
+            console.status(f"Found {len(unanalyzed)} unanalyzed, limiting to {limit} most recent")
             unanalyzed = unanalyzed[-limit:]
             # Mark older ones as analyzed to skip them
             for uid in all_uids:
                 if uid not in unanalyzed and not state.is_analyzed(uid):
                     state.mark_analyzed(uid)
         else:
-            logger.info(f"Found {len(unanalyzed)} unanalyzed emails out of {len(all_uids)}")
+            console.status(f"Found {len(unanalyzed)} unanalyzed emails")
 
         for uid in unanalyzed:
             if stop_event.is_set():
@@ -111,19 +101,19 @@ def main() -> int:
 
         # Then watch for new emails
         if not stop_event.is_set():
-            logger.info(f"Watching folder: {config.imap.folder}")
+            console.info(f"Watching folder: {config.imap.folder}")
             imap.watch(process_email, stop_event.is_set)
 
     except IMAPError as e:
-        logger.error(f"IMAP error: {e}")
+        console.error(f"IMAP error: {e}")
         return 1
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        console.error(f"Unexpected error: {e}")
         return 1
     finally:
         imap.disconnect()
 
-    logger.info("MailMind-AI stopped")
+    console.info("MailMind-AI stopped")
     return 0
 
 

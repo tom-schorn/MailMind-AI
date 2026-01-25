@@ -22,3 +22,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Conservative spam prompts to reduce false positives
 - Spam emails are only moved, not modified (no subject/body changes)
+- Structured console output with visual hierarchy and status icons

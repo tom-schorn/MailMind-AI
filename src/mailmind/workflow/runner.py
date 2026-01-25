@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from ..ai.claude import ClaudeAnalyzer
 from ..imap.client import Email, IMAPClient
+from ..logging_format import console
 from .spam_handler import SpamHandler
 from .steps import StepResult, WorkflowSteps
 
@@ -40,48 +41,54 @@ class WorkflowRunner:
 
     def process_email(self, email: Email) -> WorkflowResult:
         """Run the full spam analysis workflow on an email."""
-        logger.info(f"Processing email {email.uid}: {email.subject[:50]}...")
+        console.email_header(email.uid, email.subject, email.sender)
 
         results: List[StepResult] = []
         stopped_early = False
         stopping_step: Optional[str] = None
+        total_steps = 4
 
         # Step 1: Analyze subject
         result = self.steps.analyze_subject(email)
         results.append(result)
+        self._print_step(1, total_steps, result)
         if result.should_stop:
             stopped_early = True
             stopping_step = result.step_name
-            logger.info(f"Early exit at step 1 (subject): {result.reason}")
+            console.early_exit("Certain spam detected")
         else:
             # Step 2: Analyze sender
             result = self.steps.analyze_sender(email)
             results.append(result)
+            self._print_step(2, total_steps, result)
             if result.should_stop:
                 stopped_early = True
                 stopping_step = result.step_name
-                logger.info(f"Early exit at step 2 (sender): {result.reason}")
+                console.early_exit("Certain spam detected")
             else:
                 # Step 3: Analyze headers
                 result = self.steps.analyze_headers(email)
                 results.append(result)
+                self._print_step(3, total_steps, result)
                 if result.should_stop:
                     stopped_early = True
                     stopping_step = result.step_name
-                    logger.info(f"Early exit at step 3 (headers): {result.reason}")
+                    console.early_exit("Certain spam detected")
                 else:
                     # Step 4: Analyze content
                     result = self.steps.analyze_content(email)
                     results.append(result)
+                    self._print_step(4, total_steps, result)
 
         # Calculate final score
         final_score = self._calculate_final_score(results)
         is_spam = final_score >= self.spam_threshold
 
-        logger.info(
-            f"Email {email.uid} analysis complete: "
-            f"spam={is_spam}, score={final_score:.2f}, "
-            f"early_stop={stopped_early}"
+        # Print result box
+        console.result_box(
+            is_spam,
+            final_score,
+            self.spam_handler.spam_folder if is_spam else None,
         )
 
         # Handle spam - just move without modification
@@ -122,3 +129,15 @@ class WorkflowRunner:
             return 0.0
 
         return weighted_score / total_weight
+
+    def _print_step(self, step_num: int, total: int, result: StepResult) -> None:
+        """Print step result to console."""
+        is_spam = result.spam_score >= self.spam_threshold
+        console.step_result(
+            step_num,
+            total,
+            result.step_name.capitalize(),
+            result.spam_score,
+            result.reason,
+            is_spam,
+        )
