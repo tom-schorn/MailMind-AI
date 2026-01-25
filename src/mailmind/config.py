@@ -121,17 +121,29 @@ def load_config() -> Config:
     )
 
 
-def setup_logging(level: str) -> None:
+def setup_logging(level: str, log_file: str = "mailmind.log") -> None:
     """Configure logging for the application."""
-    numeric_level = getattr(logging, level.upper(), logging.INFO)
+    from logging.handlers import RotatingFileHandler
 
-    # Use UTF-8 encoding for Windows compatibility with unicode characters
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setStream(open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1))
+    numeric_level = getattr(logging, level.upper(), logging.INFO)
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    date_format = "%Y-%m-%d %H:%M:%S"
+
+    # Console handler with UTF-8 encoding for Windows
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setStream(open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1))
+    console_handler.setFormatter(logging.Formatter(log_format, date_format))
+
+    # File handler with rotation (max 100 lines ~ 10KB, keep 1 backup)
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=10240,  # ~100 lines
+        backupCount=1,
+        encoding='utf-8',
+    )
+    file_handler.setFormatter(logging.Formatter(log_format, date_format))
 
     logging.basicConfig(
         level=numeric_level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[handler],
+        handlers=[console_handler, file_handler],
     )

@@ -125,6 +125,22 @@ class IMAPClient:
         except imaplib.IMAP4.error as e:
             raise IMAPError(f"Failed to search messages: {e}")
 
+    def get_all_uids(self) -> list[str]:
+        """Get UIDs of all messages in current folder."""
+        if not self._connection:
+            raise IMAPError("Not connected")
+
+        try:
+            status, data = self._connection.uid("SEARCH", None, "ALL")
+            if status != "OK":
+                raise IMAPError("Failed to search for all messages")
+
+            uids = data[0].decode().split() if data[0] else []
+            logger.debug(f"Found {len(uids)} total messages")
+            return uids
+        except imaplib.IMAP4.error as e:
+            raise IMAPError(f"Failed to search messages: {e}")
+
     def fetch_email(self, uid: str) -> Email:
         """Fetch and parse email by UID."""
         if not self._connection:
