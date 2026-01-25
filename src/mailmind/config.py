@@ -1,0 +1,113 @@
+"""Configuration management for MailMind-AI."""
+
+import logging
+import os
+import sys
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class IMAPConfig:
+    """IMAP server configuration."""
+
+    host: str
+    port: int
+    user: str
+    password: str
+    folder: str
+    spam_folder: str
+    use_idle: bool
+    poll_interval: int
+
+
+@dataclass
+class Config:
+    """Application configuration."""
+
+    imap: IMAPConfig
+    anthropic_api_key: str
+    spam_threshold: float
+    log_level: str
+
+
+class ConfigError(Exception):
+    """Configuration validation error."""
+
+    pass
+
+
+def _get_required(key: str) -> str:
+    """Get required environment variable or raise error."""
+    value = os.environ.get(key)
+    if not value:
+        raise ConfigError(f"Missing required environment variable: {key}")
+    return value
+
+
+def _get_optional(key: str, default: str) -> str:
+    """Get optional environment variable with default."""
+    return os.environ.get(key, default)
+
+
+def _get_bool(key: str, default: bool) -> bool:
+    """Get boolean environment variable."""
+    value = os.environ.get(key)
+    if value is None:
+        return default
+    return value.lower() in ("true", "1", "yes")
+
+
+def _get_int(key: str, default: int) -> int:
+    """Get integer environment variable."""
+    value = os.environ.get(key)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        raise ConfigError(f"Invalid integer value for {key}: {value}")
+
+
+def _get_float(key: str, default: float) -> float:
+    """Get float environment variable."""
+    value = os.environ.get(key)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        raise ConfigError(f"Invalid float value for {key}: {value}")
+
+
+def load_config() -> Config:
+    """Load and validate configuration from environment variables."""
+    imap = IMAPConfig(
+        host=_get_required("IMAP_HOST"),
+        port=_get_int("IMAP_PORT", 993),
+        user=_get_required("IMAP_USER"),
+        password=_get_required("IMAP_PASSWORD"),
+        folder=_get_optional("IMAP_FOLDER", "INBOX"),
+        spam_folder=_get_required("IMAP_SPAM_FOLDER"),
+        use_idle=_get_bool("IMAP_USE_IDLE", True),
+        poll_interval=_get_int("IMAP_POLL_INTERVAL", 60),
+    )
+
+    return Config(
+        imap=imap,
+        anthropic_api_key=_get_required("ANTHROPIC_API_KEY"),
+        spam_threshold=_get_float("SPAM_THRESHOLD", 0.7),
+        log_level=_get_optional("LOG_LEVEL", "INFO"),
+    )
+
+
+def setup_logging(level: str) -> None:
+    """Configure logging for the application."""
+    numeric_level = getattr(logging, level.upper(), logging.INFO)
+
+    logging.basicConfig(
+        level=numeric_level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
