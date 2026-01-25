@@ -10,7 +10,9 @@ from dotenv import load_dotenv
 from .ai.claude import ClaudeAnalyzer
 from .config import ConfigError, load_config, setup_logging
 from .imap.client import Email, IMAPClient, IMAPError
+from .lists import DomainLists
 from .logging_format import console
+from .spam_monitor import SpamFolderMonitor
 from .state import StateManager
 from .workflow.runner import WorkflowRunner
 
@@ -47,8 +49,9 @@ def main() -> int:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Initialize state manager
+    # Initialize state manager and domain lists
     state = StateManager()
+    domain_lists = DomainLists()
 
     # Initialize components
     imap = IMAPClient(config.imap)
@@ -58,11 +61,14 @@ def main() -> int:
         sensitivity=config.spam.sensitivity,
         custom_prompt=config.spam.prompt,
     )
+    spam_monitor = SpamFolderMonitor(imap, config.imap.spam_folder, domain_lists)
     runner = WorkflowRunner(
         imap,
         analyzer,
         config.imap.spam_folder,
         config.spam.threshold,
+        domain_lists,
+        on_spam_move=spam_monitor.record_our_move,
     )
 
     def process_email(email: Email) -> None:
@@ -77,10 +83,16 @@ def main() -> int:
         except Exception as e:
             console.error(f"Failed to process email {email.uid}: {e}")
 
+        # Check spam folder for user changes
+        spam_monitor.check_for_changes()
+
     # Connect and start watching
     try:
         imap.connect()
         imap.select_folder()
+
+        # Initial spam folder scan for learning
+        spam_monitor.initial_scan()
 
         # Process unanalyzed emails (limited to most recent)
         console.status("Checking for unanalyzed emails...")

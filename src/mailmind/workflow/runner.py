@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from ..ai.claude import ClaudeAnalyzer, SpamCategory
 from ..imap.client import Email, IMAPClient
+from ..lists import DomainLists
 from ..logging_format import console
 from .spam_handler import SpamHandler
 from .steps import StepResult, WorkflowSteps
@@ -36,14 +37,47 @@ class WorkflowRunner:
         analyzer: ClaudeAnalyzer,
         spam_folder: str,
         spam_threshold: float = 0.7,
+        domain_lists: Optional[DomainLists] = None,
+        on_spam_move: Optional[callable] = None,
     ):
         self.steps = WorkflowSteps(analyzer, spam_threshold)
         self.spam_handler = SpamHandler(imap_client, spam_folder)
         self.spam_threshold = spam_threshold
+        self.domain_lists = domain_lists
+        self.on_spam_move = on_spam_move  # Callback when we move spam
 
     def process_email(self, email: Email) -> WorkflowResult:
         """Run the full spam analysis workflow on an email."""
         console.email_header(email.uid, email.subject, email.sender)
+
+        # Check whitelist/blacklist first
+        if self.domain_lists:
+            if self.domain_lists.is_whitelisted(email.sender):
+                console.status("  >> Sender is whitelisted - skipping analysis")
+                console.result_box(False, 0.0, None, None)
+                return WorkflowResult(
+                    email_uid=email.uid,
+                    is_spam=False,
+                    final_score=0.0,
+                    category=SpamCategory.LEGITIMATE,
+                    step_results=[],
+                    stopped_early=True,
+                    stopping_step="whitelist",
+                )
+
+            if self.domain_lists.is_blacklisted(email.sender):
+                console.status("  >> Sender is blacklisted - marking as spam")
+                console.result_box(True, 1.0, "blacklisted", self.spam_handler.spam_folder)
+                self.spam_handler.move_to_spam(email, SpamCategory.UNKNOWN)
+                return WorkflowResult(
+                    email_uid=email.uid,
+                    is_spam=True,
+                    final_score=1.0,
+                    category=SpamCategory.UNKNOWN,
+                    step_results=[],
+                    stopped_early=True,
+                    stopping_step="blacklist",
+                )
 
         results: List[StepResult] = []
         stopped_early = False
@@ -98,6 +132,8 @@ class WorkflowRunner:
         # Handle spam - move to category subfolder
         if is_spam:
             self.spam_handler.move_to_spam(email, category)
+            if self.on_spam_move:
+                self.on_spam_move(email.uid)
 
         return WorkflowResult(
             email_uid=email.uid,

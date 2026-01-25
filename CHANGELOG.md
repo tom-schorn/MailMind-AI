@@ -16,10 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Spam category detection: phishing, scam, malware, adult
 - Automatic category subfolders in spam folder
 - Improved spam prompts with red flag detection
+- Whitelist/blacklist system for sender domains
+- Spam folder monitoring: learns from user actions
+- Emails moved from spam by user are whitelisted
+- Emails moved to spam by user are blacklisted
 
 ### Changed
 - Prompts now include sensitivity-based instructions
 - Spam emails sorted into category subfolders (Spam/Phishing, Spam/Scam, etc.)
+- Whitelisted senders skip AI analysis entirely
+- Blacklisted senders are marked as spam immediately
 
 ## [0.1.0] - TBD
 
