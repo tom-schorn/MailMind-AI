@@ -60,8 +60,11 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
+            type=semver,pattern=v{{version}}
             type=semver,pattern={{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
             type=sha,prefix=
 
       - name: Build and push
