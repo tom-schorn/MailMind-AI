@@ -274,6 +274,50 @@ class IMAPClient:
         except imaplib.IMAP4.error as e:
             raise IMAPError(f"Failed to update email {uid}: {e}")
 
+    def modify_and_move_to_spam(
+        self, email_obj: Email, new_subject: str, new_body: str, spam_folder: str
+    ) -> None:
+        """Modify email and move it to spam folder in one operation."""
+        if not self._connection:
+            raise IMAPError("Not connected")
+
+        try:
+            msg = email_obj.raw_message
+
+            # Update subject
+            if "Subject" in msg:
+                del msg["Subject"]
+            msg["Subject"] = new_subject
+
+            # Update body
+            if msg.is_multipart():
+                for part in msg.walk():
+                    if part.get_content_type() == "text/html":
+                        part.set_payload(new_body.encode("utf-8"))
+                        break
+                    elif part.get_content_type() == "text/plain":
+                        part.set_payload(new_body.encode("utf-8"))
+            else:
+                msg.set_payload(new_body.encode("utf-8"))
+
+            # Append modified message directly to spam folder
+            status, _ = self._connection.append(
+                spam_folder,
+                "\\Seen",
+                None,
+                msg.as_bytes(),
+            )
+            if status != "OK":
+                raise IMAPError(f"Failed to append message to {spam_folder}")
+
+            # Delete original from inbox
+            self._connection.uid("STORE", email_obj.uid, "+FLAGS", "\\Deleted")
+            self._connection.expunge()
+
+            logger.info(f"Modified and moved email {email_obj.uid} to {spam_folder}")
+        except imaplib.IMAP4.error as e:
+            raise IMAPError(f"Failed to modify and move email {email_obj.uid}: {e}")
+
     def watch(
         self, callback: Callable[[Email], None], stop_check: Callable[[], bool]
     ) -> None:

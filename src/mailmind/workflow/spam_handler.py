@@ -33,14 +33,20 @@ class SpamHandler:
             is_html=bool(email.body_html),
         )
 
-        # Update email and move to spam folder
         try:
-            self.imap.update_email(email.uid, new_subject, new_body)
-            # After update, we need to find the new UID and move it
-            # For simplicity, we'll move in the update_email step
-            logger.info(f"Spam email {email.uid} processed")
+            # Modify email in place and then move to spam
+            self.imap.modify_and_move_to_spam(
+                email, new_subject, new_body, self.spam_folder
+            )
+            logger.info(f"Spam email {email.uid} processed and moved to {self.spam_folder}")
         except Exception as e:
             logger.error(f"Failed to process spam email {email.uid}: {e}")
+            # Fallback: just move without modification
+            try:
+                self.imap.move_to_folder(email.uid, self.spam_folder)
+                logger.info(f"Fallback: moved email {email.uid} to spam without modification")
+            except Exception as e2:
+                logger.error(f"Fallback move also failed: {e2}")
 
     def _mark_subject(self, subject: str) -> str:
         """Add *SPAM* prefix to subject."""
