@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - TBD
+## [0.2.0] - 2026-01-25
 
 ### Added
 - Configurable spam sensitivity (1-10 scale via SPAM_SENSITIVITY)
