@@ -55,6 +55,19 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
+      - name: Check if pre-release
+        id: prerelease
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          if [ "$MAJOR" -lt 1 ]; then
+            echo "tag=pre-latest" >> $GITHUB_OUTPUT
+            echo "Using pre-latest tag (version < 1.0.0)"
+          else
+            echo "tag=latest" >> $GITHUB_OUTPUT
+            echo "Using latest tag (version >= 1.0.0)"
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -76,7 +89,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern=v{{major}}.{{minor}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=raw,value=${{ steps.prerelease.outputs.tag }}
             type=sha,prefix=
 
       - name: Build and push
