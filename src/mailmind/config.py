@@ -30,6 +30,7 @@ class Config:
     anthropic_api_key: str
     spam_threshold: float
     log_level: str
+    analysis_limit: int  # Max emails to analyze on startup (0 = unlimited)
 
 
 class ConfigError(Exception):
@@ -118,6 +119,7 @@ def load_config() -> Config:
         anthropic_api_key=_get_required("ANTHROPIC_API_KEY"),
         spam_threshold=_get_float("SPAM_THRESHOLD", 0.7),
         log_level=_get_optional("LOG_LEVEL", "INFO"),
+        analysis_limit=_get_int("ANALYSIS_LIMIT", 50),
     )
 
 

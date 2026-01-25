@@ -86,11 +86,22 @@ def main() -> int:
         imap.connect()
         imap.select_folder()
 
-        # Process all unanalyzed emails first
+        # Process unanalyzed emails (limited to most recent)
         logger.info("Checking for unanalyzed emails...")
         all_uids = imap.get_all_uids()
         unanalyzed = [uid for uid in all_uids if not state.is_analyzed(uid)]
-        logger.info(f"Found {len(unanalyzed)} unanalyzed emails out of {len(all_uids)}")
+
+        # Apply limit (0 = unlimited), take most recent (last in list)
+        limit = config.analysis_limit
+        if limit > 0 and len(unanalyzed) > limit:
+            logger.info(f"Found {len(unanalyzed)} unanalyzed emails, limiting to {limit} most recent")
+            unanalyzed = unanalyzed[-limit:]
+            # Mark older ones as analyzed to skip them
+            for uid in all_uids:
+                if uid not in unanalyzed and not state.is_analyzed(uid):
+                    state.mark_analyzed(uid)
+        else:
+            logger.info(f"Found {len(unanalyzed)} unanalyzed emails out of {len(all_uids)}")
 
         for uid in unanalyzed:
             if stop_event.is_set():
