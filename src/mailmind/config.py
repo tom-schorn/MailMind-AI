@@ -125,9 +125,13 @@ def setup_logging(level: str) -> None:
     """Configure logging for the application."""
     numeric_level = getattr(logging, level.upper(), logging.INFO)
 
+    # Use UTF-8 encoding for Windows compatibility with unicode characters
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setStream(open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1))
+
     logging.basicConfig(
         level=numeric_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[logging.StreamHandler(sys.stdout)],
+        handlers=[handler],
     )

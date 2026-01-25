@@ -280,23 +280,32 @@ class IMAPClient:
         """Watch for new emails using IDLE or polling."""
         self.select_folder()
 
+        # Remember existing unseen emails - don't process them
+        known_uids = set(self.get_unseen_uids())
+        logger.info(f"Ignoring {len(known_uids)} existing unseen emails")
+
         if self.config.use_idle and self._supports_idle:
-            self._watch_idle(callback, stop_check)
+            self._watch_idle(callback, stop_check, known_uids)
         else:
-            self._watch_poll(callback, stop_check)
+            self._watch_poll(callback, stop_check, known_uids)
 
     def _watch_idle(
-        self, callback: Callable[[Email], None], stop_check: Callable[[], bool]
+        self,
+        callback: Callable[[Email], None],
+        stop_check: Callable[[], bool],
+        known_uids: set[str],
     ) -> None:
         """Watch for new emails using IDLE."""
-        logger.info("Starting IDLE watch")
+        logger.info("Starting IDLE watch (only new emails)")
 
         while not stop_check():
             try:
-                # Process existing unseen
+                # Process only NEW unseen emails
                 for uid in self.get_unseen_uids():
-                    email_data = self.fetch_email(uid)
-                    callback(email_data)
+                    if uid not in known_uids:
+                        known_uids.add(uid)
+                        email_data = self.fetch_email(uid)
+                        callback(email_data)
 
                 # Enter IDLE mode
                 self._connection.send(b"a001 IDLE\r\n")
@@ -324,18 +333,24 @@ class IMAPClient:
                 self.select_folder()
 
     def _watch_poll(
-        self, callback: Callable[[Email], None], stop_check: Callable[[], bool]
+        self,
+        callback: Callable[[Email], None],
+        stop_check: Callable[[], bool],
+        known_uids: set[str],
     ) -> None:
         """Watch for new emails using polling."""
         logger.info(
-            f"Starting polling watch (interval: {self.config.poll_interval}s)"
+            f"Starting polling watch (interval: {self.config.poll_interval}s, only new emails)"
         )
 
         while not stop_check():
             try:
+                # Process only NEW unseen emails
                 for uid in self.get_unseen_uids():
-                    email_data = self.fetch_email(uid)
-                    callback(email_data)
+                    if uid not in known_uids:
+                        known_uids.add(uid)
+                        email_data = self.fetch_email(uid)
+                        callback(email_data)
 
                 time.sleep(self.config.poll_interval)
 
