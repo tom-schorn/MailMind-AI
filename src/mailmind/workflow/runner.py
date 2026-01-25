@@ -84,9 +84,9 @@ class WorkflowRunner:
             f"early_stop={stopped_early}"
         )
 
-        # Handle spam
+        # Handle spam - just move without modification
         if is_spam:
-            self.spam_handler.handle_spam(email, results, final_score)
+            self.spam_handler.move_to_spam(email)
 
         return WorkflowResult(
             email_uid=email.uid,
