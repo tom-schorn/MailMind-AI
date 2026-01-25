@@ -38,16 +38,28 @@ class IMAPClient:
 
     def __init__(self, config: IMAPConfig):
         self.config = config
-        self._connection: Optional[imaplib.IMAP4_SSL] = None
+        self._connection: Optional[imaplib.IMAP4] = None
         self._supports_idle: Optional[bool] = None
 
     def connect(self) -> None:
         """Connect to IMAP server."""
-        logger.info(f"Connecting to {self.config.host}:{self.config.port}")
+        logger.info(
+            f"Connecting to {self.config.host}:{self.config.port} "
+            f"(SSL={self.config.use_ssl})"
+        )
         try:
-            self._connection = imaplib.IMAP4_SSL(
-                self.config.host, self.config.port
-            )
+            if self.config.use_ssl:
+                # Direct SSL connection (port 993)
+                self._connection = imaplib.IMAP4_SSL(
+                    self.config.host, self.config.port
+                )
+            else:
+                # Plain connection with STARTTLS (port 143)
+                self._connection = imaplib.IMAP4(
+                    self.config.host, self.config.port
+                )
+                self._connection.starttls()
+
             self._connection.login(self.config.user, self.config.password)
             logger.info("Connected successfully")
 

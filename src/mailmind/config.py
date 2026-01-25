@@ -19,6 +19,7 @@ class IMAPConfig:
     spam_folder: str
     use_idle: bool
     poll_interval: int
+    use_ssl: bool  # True=SSL, False=STARTTLS
 
 
 @dataclass
@@ -80,17 +81,36 @@ def _get_float(key: str, default: float) -> float:
         raise ConfigError(f"Invalid float value for {key}: {value}")
 
 
+def _get_optional_bool(key: str) -> Optional[bool]:
+    """Get optional boolean environment variable."""
+    value = os.environ.get(key)
+    if value is None:
+        return None
+    return value.lower() in ("true", "1", "yes")
+
+
 def load_config() -> Config:
     """Load and validate configuration from environment variables."""
+    port = _get_int("IMAP_PORT", 993)
+
+    # Auto-detect SSL based on port if not explicitly set
+    use_ssl_env = _get_optional_bool("IMAP_SSL")
+    if use_ssl_env is not None:
+        use_ssl = use_ssl_env
+    else:
+        # Port 993 = SSL, Port 143 = STARTTLS
+        use_ssl = port == 993
+
     imap = IMAPConfig(
         host=_get_required("IMAP_HOST"),
-        port=_get_int("IMAP_PORT", 993),
+        port=port,
         user=_get_required("IMAP_USER"),
         password=_get_required("IMAP_PASSWORD"),
         folder=_get_optional("IMAP_FOLDER", "INBOX"),
         spam_folder=_get_required("IMAP_SPAM_FOLDER"),
         use_idle=_get_bool("IMAP_USE_IDLE", True),
         poll_interval=_get_int("IMAP_POLL_INTERVAL", 60),
+        use_ssl=use_ssl,
     )
 
     return Config(
