@@ -3,9 +3,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: mailmind-ai:0.2.0
     container_name: mailmind-ai
     restart: unless-stopped
     environment:
+      # IMAP Configuration
       - IMAP_HOST=${IMAP_HOST}
       - IMAP_PORT=${IMAP_PORT:-993}
       - IMAP_USER=${IMAP_USER}
@@ -14,11 +16,22 @@ services:
       - IMAP_SPAM_FOLDER=${IMAP_SPAM_FOLDER}
       - IMAP_USE_IDLE=${IMAP_USE_IDLE:-true}
       - IMAP_POLL_INTERVAL=${IMAP_POLL_INTERVAL:-60}
+      # Anthropic API
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - SPAM_THRESHOLD=${SPAM_THRESHOLD:-0.7}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-haiku}
+      # Spam Detection
+      - SPAM_SENSITIVITY=${SPAM_SENSITIVITY:-5}
+      - SPAM_PROMPT=${SPAM_PROMPT:-Standard}
+      - ANALYSIS_LIMIT=${ANALYSIS_LIMIT:-50}
+      # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - mailmind-data:/app/data
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  mailmind-data:

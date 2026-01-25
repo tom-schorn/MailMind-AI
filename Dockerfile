@@ -12,7 +12,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="MailMind-AI"
 LABEL org.opencontainers.image.description="E-Mail spam detection agent"
-LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.version="0.2.0"
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash mailmind
@@ -25,8 +25,14 @@ COPY --from=builder /root/.local /home/mailmind/.local
 # Copy application code
 COPY --chown=mailmind:mailmind src/ ./src/
 
+# Create data directory for state persistence
+RUN mkdir -p /app/data && chown mailmind:mailmind /app/data
+
 # Switch to non-root user
 USER mailmind
+
+# Set working directory to data for state files
+WORKDIR /app/data
 
 # Add local bin to PATH
 ENV PATH=/home/mailmind/.local/bin:$PATH
