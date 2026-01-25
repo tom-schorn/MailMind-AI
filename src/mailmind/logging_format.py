@@ -58,19 +58,28 @@ class ConsoleOutput:
         """Print early exit notice."""
         print(f"  {ICON_ARROW} Early exit: {reason}")
 
-    def result_box(self, is_spam: bool, score: float, spam_folder: str = None) -> None:
+    def result_box(
+        self,
+        is_spam: bool,
+        score: float,
+        category: str = None,
+        spam_folder: str = None,
+    ) -> None:
         """Print final result box."""
         inner_width = WIDTH - 2
 
         if is_spam:
-            status = f"{ICON_FAIL} SPAM"
+            cat_display = category.upper() if category else "SPAM"
+            status = f"{ICON_FAIL} {cat_display}"
             if spam_folder:
-                status += f" (moved to {spam_folder})"
+                status += f" -> {spam_folder}"
         else:
             status = f"{ICON_OK} LEGITIMATE"
 
-        score_text = f"Final Score: {score:.2f}"
+        score_text = f"Score: {score:.2f}"
         padding = inner_width - len(status) - len(score_text) - 2
+        if padding < 1:
+            padding = 1
 
         print()
         print(f"{CORNER_TL}{LINE_LIGHT * inner_width}{CORNER_TR}")

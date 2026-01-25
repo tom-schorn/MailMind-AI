@@ -23,12 +23,22 @@ class IMAPConfig:
 
 
 @dataclass
+class SpamConfig:
+    """Spam detection configuration."""
+
+    sensitivity: int  # 1-10 scale
+    threshold: float  # Calculated from sensitivity
+    prompt: Optional[str]  # Custom prompt or None for default
+    model: str  # haiku, sonnet, opus
+
+
+@dataclass
 class Config:
     """Application configuration."""
 
     imap: IMAPConfig
     anthropic_api_key: str
-    spam_threshold: float
+    spam: SpamConfig
     log_level: str
     analysis_limit: int  # Max emails to analyze on startup (0 = unlimited)
 
@@ -114,10 +124,34 @@ def load_config() -> Config:
         use_ssl=use_ssl,
     )
 
+    # Spam configuration
+    sensitivity = _get_int("SPAM_SENSITIVITY", 5)
+    if sensitivity < 1 or sensitivity > 10:
+        raise ConfigError("SPAM_SENSITIVITY must be between 1 and 10")
+
+    # Convert sensitivity to threshold: 1=0.95 (relaxed), 10=0.50 (strict)
+    threshold = 0.95 - (sensitivity - 1) * 0.05
+
+    # Custom prompt (None if "Standard" or not set)
+    prompt_value = _get_optional("SPAM_PROMPT", "Standard")
+    custom_prompt = None if prompt_value == "Standard" else prompt_value
+
+    # Model selection
+    model = _get_optional("CLAUDE_MODEL", "haiku").lower()
+    if model not in ("haiku", "sonnet", "opus"):
+        raise ConfigError("CLAUDE_MODEL must be haiku, sonnet, or opus")
+
+    spam = SpamConfig(
+        sensitivity=sensitivity,
+        threshold=threshold,
+        prompt=custom_prompt,
+        model=model,
+    )
+
     return Config(
         imap=imap,
         anthropic_api_key=_get_required("ANTHROPIC_API_KEY"),
-        spam_threshold=_get_float("SPAM_THRESHOLD", 0.7),
+        spam=spam,
         log_level=_get_optional("LOG_LEVEL", "INFO"),
         analysis_limit=_get_int("ANALYSIS_LIMIT", 50),
     )

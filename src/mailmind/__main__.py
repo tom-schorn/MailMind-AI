@@ -40,7 +40,8 @@ def main() -> int:
 
     # Setup logging
     setup_logging(config.log_level)
-    console.info("MailMind-AI starting")
+    console.info("MailMind-AI v0.2.0 starting")
+    console.status(f"Model: {config.spam.model} | Sensitivity: {config.spam.sensitivity}/10")
 
     # Setup signal handlers
     signal.signal(signal.SIGINT, signal_handler)
@@ -51,12 +52,17 @@ def main() -> int:
 
     # Initialize components
     imap = IMAPClient(config.imap)
-    analyzer = ClaudeAnalyzer(config.anthropic_api_key)
+    analyzer = ClaudeAnalyzer(
+        api_key=config.anthropic_api_key,
+        model=config.spam.model,
+        sensitivity=config.spam.sensitivity,
+        custom_prompt=config.spam.prompt,
+    )
     runner = WorkflowRunner(
         imap,
         analyzer,
         config.imap.spam_folder,
-        config.spam_threshold,
+        config.spam.threshold,
     )
 
     def process_email(email: Email) -> None:

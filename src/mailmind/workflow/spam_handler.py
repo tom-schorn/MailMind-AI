@@ -1,20 +1,30 @@
 """Spam handling: mark and move spam emails."""
 
 import logging
-from typing import List
+from typing import List, Set
 
+from ..ai.claude import SpamCategory
 from ..imap.client import Email, IMAPClient
 from .steps import StepResult
 
 logger = logging.getLogger(__name__)
 
+# Category folder mapping
+CATEGORY_FOLDERS = {
+    SpamCategory.PHISHING: "Phishing",
+    SpamCategory.SCAM: "Scam",
+    SpamCategory.MALWARE: "Malware",
+    SpamCategory.ADULT: "Adult",
+}
+
 
 class SpamHandler:
-    """Handle spam emails: mark subject, add explanation, move to folder."""
+    """Handle spam emails: move to category subfolders."""
 
     def __init__(self, imap_client: IMAPClient, spam_folder: str):
         self.imap = imap_client
         self.spam_folder = spam_folder
+        self._created_folders: Set[str] = set()
 
     def handle_spam(
         self, email: Email, results: List[StepResult], final_score: float
@@ -117,10 +127,41 @@ Analyzed by MailMind-AI
 ========================================
 """
 
-    def move_to_spam(self, email: Email) -> None:
-        """Move email to spam folder without modification."""
+    def move_to_spam(
+        self, email: Email, category: SpamCategory = SpamCategory.UNKNOWN
+    ) -> None:
+        """Move email to spam category subfolder."""
+        # Determine target folder
+        if category in CATEGORY_FOLDERS:
+            subfolder = CATEGORY_FOLDERS[category]
+            target_folder = f"{self.spam_folder}/{subfolder}"
+        else:
+            target_folder = self.spam_folder
+
+        # Ensure folder exists
+        self._ensure_folder_exists(target_folder)
+
         try:
-            self.imap.move_to_folder(email.uid, self.spam_folder)
-            logger.info(f"Moved email {email.uid} to {self.spam_folder}")
+            self.imap.move_to_folder(email.uid, target_folder)
+            logger.info(f"Moved email {email.uid} to {target_folder}")
         except Exception as e:
-            logger.error(f"Failed to move email {email.uid} to spam: {e}")
+            logger.error(f"Failed to move email {email.uid} to {target_folder}: {e}")
+            # Fallback to main spam folder
+            if target_folder != self.spam_folder:
+                try:
+                    self.imap.move_to_folder(email.uid, self.spam_folder)
+                    logger.info(f"Fallback: moved to {self.spam_folder}")
+                except Exception as e2:
+                    logger.error(f"Fallback also failed: {e2}")
+
+    def _ensure_folder_exists(self, folder: str) -> None:
+        """Create folder if it doesn't exist (cached)."""
+        if folder in self._created_folders:
+            return
+
+        try:
+            self.imap.create_folder(folder)
+            self._created_folders.add(folder)
+        except Exception:
+            # Folder might already exist
+            self._created_folders.add(folder)

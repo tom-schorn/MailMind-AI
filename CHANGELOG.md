@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - TBD
+
+### Added
+- Configurable spam sensitivity (1-10 scale via SPAM_SENSITIVITY)
+- Model selection: haiku, sonnet, opus (via CLAUDE_MODEL)
+- Custom prompt override (via SPAM_PROMPT)
+- Spam category detection: phishing, scam, malware, adult
+- Automatic category subfolders in spam folder
+- Improved spam prompts with red flag detection
+
+### Changed
+- Prompts now include sensitivity-based instructions
+- Spam emails sorted into category subfolders (Spam/Phishing, Spam/Scam, etc.)
+
 ## [0.1.0] - TBD
 
 ### Added

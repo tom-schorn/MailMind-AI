@@ -1,10 +1,11 @@
 """Workflow runner for spam analysis."""
 
 import logging
+from collections import Counter
 from dataclasses import dataclass
 from typing import List, Optional
 
-from ..ai.claude import ClaudeAnalyzer
+from ..ai.claude import ClaudeAnalyzer, SpamCategory
 from ..imap.client import Email, IMAPClient
 from ..logging_format import console
 from .spam_handler import SpamHandler
@@ -20,6 +21,7 @@ class WorkflowResult:
     email_uid: str
     is_spam: bool
     final_score: float
+    category: SpamCategory
     step_results: List[StepResult]
     stopped_early: bool
     stopping_step: Optional[str]
@@ -80,25 +82,28 @@ class WorkflowRunner:
                     results.append(result)
                     self._print_step(4, total_steps, result)
 
-        # Calculate final score
+        # Calculate final score and category
         final_score = self._calculate_final_score(results)
         is_spam = final_score >= self.spam_threshold
+        category = self._determine_category(results, is_spam)
 
         # Print result box
         console.result_box(
             is_spam,
             final_score,
+            category.value if is_spam else None,
             self.spam_handler.spam_folder if is_spam else None,
         )
 
-        # Handle spam - just move without modification
+        # Handle spam - move to category subfolder
         if is_spam:
-            self.spam_handler.move_to_spam(email)
+            self.spam_handler.move_to_spam(email, category)
 
         return WorkflowResult(
             email_uid=email.uid,
             is_spam=is_spam,
             final_score=final_score,
+            category=category,
             step_results=results,
             stopped_early=stopped_early,
             stopping_step=stopping_step,
@@ -129,6 +134,27 @@ class WorkflowRunner:
             return 0.0
 
         return weighted_score / total_weight
+
+    def _determine_category(
+        self, results: List[StepResult], is_spam: bool
+    ) -> SpamCategory:
+        """Determine the final spam category from step results."""
+        if not is_spam:
+            return SpamCategory.LEGITIMATE
+
+        # Get all non-legitimate, non-unknown categories
+        spam_categories = [
+            r.category
+            for r in results
+            if r.category not in (SpamCategory.LEGITIMATE, SpamCategory.UNKNOWN)
+        ]
+
+        if not spam_categories:
+            return SpamCategory.UNKNOWN
+
+        # Return most common category
+        counter = Counter(spam_categories)
+        return counter.most_common(1)[0][0]
 
     def _print_step(self, step_num: int, total: int, result: StepResult) -> None:
         """Print step result to console."""

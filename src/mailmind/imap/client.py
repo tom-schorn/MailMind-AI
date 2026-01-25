@@ -246,6 +246,32 @@ class IMAPClient:
         except imaplib.IMAP4.error as e:
             raise IMAPError(f"Failed to move email {uid}: {e}")
 
+    def create_folder(self, folder: str) -> None:
+        """Create mailbox folder if it doesn't exist."""
+        if not self._connection:
+            raise IMAPError("Not connected")
+
+        try:
+            # Check if folder exists
+            status, _ = self._connection.select(folder)
+            if status == "OK":
+                # Folder exists, re-select original folder
+                self._connection.select(self.config.folder)
+                return
+
+        except imaplib.IMAP4.error:
+            pass  # Folder doesn't exist, create it
+
+        try:
+            self._connection.create(folder)
+            logger.info(f"Created folder: {folder}")
+            # Re-select original folder
+            self._connection.select(self.config.folder)
+        except imaplib.IMAP4.error as e:
+            # Folder might already exist (race condition)
+            logger.debug(f"Could not create folder {folder}: {e}")
+            self._connection.select(self.config.folder)
+
     def update_email(self, uid: str, new_subject: str, new_body: str) -> None:
         """Update email subject and body by replacing the message."""
         if not self._connection:

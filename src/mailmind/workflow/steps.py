@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from ..ai.claude import ClaudeAnalyzer
+from ..ai.claude import AnalysisResult, ClaudeAnalyzer, SpamCategory
 from ..imap.client import Email
 
 
@@ -15,6 +15,7 @@ class StepResult:
     reason: str
     is_certain: bool
     should_stop: bool  # True if we should stop the workflow
+    category: SpamCategory = SpamCategory.UNKNOWN
 
 
 class WorkflowSteps:
@@ -35,6 +36,7 @@ class WorkflowSteps:
             reason=result.reason,
             is_certain=result.is_certain,
             should_stop=should_stop,
+            category=result.category,
         )
 
     def analyze_subject(self, email: Email) -> StepResult:
