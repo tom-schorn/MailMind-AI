@@ -10,9 +10,10 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 # Runtime stage
 FROM python:3.12-slim
 
+ARG VERSION=dev
 LABEL org.opencontainers.image.title="MailMind-AI"
 LABEL org.opencontainers.image.description="E-Mail spam detection agent"
-LABEL org.opencontainers.image.version="0.2.0"
+LABEL org.opencontainers.image.version="${VERSION}"
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash mailmind

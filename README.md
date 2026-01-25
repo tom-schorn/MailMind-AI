@@ -20,8 +20,8 @@ Docker-based E-Mail Agent that monitors IMAP inbox and analyzes incoming emails 
 docker-compose up -d
 
 # Or build and run manually
-docker build -t mailmind-ai:0.2.0 .
-docker run --env-file .env -v mailmind-data:/app/data mailmind-ai:0.2.0
+docker build -t mailmind-ai:latest .
+docker run --env-file .env -v mailmind-data:/app/data mailmind-ai:latest
 ```
 
 ## Configuration

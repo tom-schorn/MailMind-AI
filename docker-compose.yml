@@ -3,7 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: mailmind-ai:0.2.0
+      args:
+        VERSION: ${VERSION:-latest}
+    image: ${REGISTRY:-registry.ts-entwicklung.de}/mailmind-ai:${VERSION:-latest}
     container_name: mailmind-ai
     restart: unless-stopped
     environment:

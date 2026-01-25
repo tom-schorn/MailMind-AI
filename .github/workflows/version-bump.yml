@@ -1,0 +1,96 @@
+name: Version Bump
+
+on:
+  push:
+    branches: [master]
+  workflow_run:
+    workflows: ["CI/CD"]
+    types: [completed]
+    branches: [master]
+
+concurrency:
+  group: version-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    if: |
+      github.event_name == 'push' &&
+      !contains(github.event.head_commit.message, '[skip ci]') &&
+      !contains(github.event.head_commit.message, '[version bump]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get last tag
+        id: last_tag
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "tag=$LAST_TAG" >> $GITHUB_OUTPUT
+          echo "Last tag: $LAST_TAG"
+
+      - name: Analyze commits
+        id: analyze
+        run: |
+          chmod +x .github/scripts/analyze_commits.sh
+          BUMP_TYPE=$(.github/scripts/analyze_commits.sh "${{ steps.last_tag.outputs.tag }}")
+          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+          echo "Bump type: $BUMP_TYPE"
+
+      - name: Check if bump needed
+        if: steps.analyze.outputs.bump_type == 'none'
+        run: |
+          echo "No version bump needed"
+          exit 0
+
+      - name: Get current version
+        if: steps.analyze.outputs.bump_type != 'none'
+        id: current
+        run: |
+          python .github/scripts/get_version.py
+          VERSION=$(python .github/scripts/get_version.py)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Bump version
+        if: steps.analyze.outputs.bump_type != 'none'
+        id: new_version
+        run: |
+          chmod +x .github/scripts/bump_version.sh
+          NEW_VERSION=$(.github/scripts/bump_version.sh "${{ steps.current.outputs.version }}" "${{ steps.analyze.outputs.bump_type }}")
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Update CHANGELOG
+        if: steps.analyze.outputs.bump_type != 'none'
+        run: |
+          chmod +x .github/scripts/update_changelog.sh
+          .github/scripts/update_changelog.sh "${{ steps.last_tag.outputs.tag }}" "${{ steps.new_version.outputs.version }}"
+
+      - name: Commit and tag
+        if: steps.analyze.outputs.bump_type != 'none'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Add changed files
+          git add src/mailmind/__init__.py CHANGELOG.md
+
+          # Create commit
+          git commit -m "chore: bump version to ${{ steps.new_version.outputs.version }} [skip ci]"
+
+          # Create annotated tag
+          git tag -a "v${{ steps.new_version.outputs.version }}" -m "Release v${{ steps.new_version.outputs.version }}"
+
+          # Push commit and tag
+          git push origin master
+          git push origin "v${{ steps.new_version.outputs.version }}"
+
+          echo "Version bumped to ${{ steps.new_version.outputs.version }}"
