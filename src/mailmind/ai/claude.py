@@ -71,41 +71,56 @@ class ClaudeAnalyzer:
 
     def analyze_subject(self, subject: str) -> AnalysisResult:
         """Analyze email subject for spam indicators."""
-        system_prompt = """You are an email spam analyzer. Analyze ONLY the email subject line.
+        system_prompt = """You are a conservative email spam analyzer. Analyze ONLY the email subject line.
 
-IMPORTANT: Newsletters are NOT spam. Marketing from legitimate companies you subscribed to is NOT spam.
+CRITICAL - These are NOT spam (score 0.0-0.3):
+- Newsletters from ANY company (waipu, Apple, Patreon, Freeletics, etc.)
+- Marketing emails from legitimate brands
+- Notification emails (receipts, shipping, account updates)
+- Social media notifications
+- App notifications (Kleinanzeigen, Temu, etc.)
+- Publisher emails (Rheinwerk, etc.)
+- Subscription services
 
-Spam indicators in subjects:
-- Urgent/threatening language ("Account suspended!", "Act now!")
-- Excessive punctuation or caps ("FREE!!!", "WINNER")
-- Suspicious offers (lottery wins, inheritance)
-- Impersonation attempts
-- Phishing indicators
+ONLY flag as spam (score 0.9+) if subject contains:
+- Obvious lottery/inheritance scams
+- Clear phishing ("Your account will be deleted")
+- Crypto/investment scams
+- Adult content spam
+- Random gibberish text
+
+When in doubt, score LOW (0.0-0.3). False positives are worse than missed spam.
 
 Respond with JSON only:
 {"spam_score": 0.0-1.0, "reason": "brief explanation", "is_certain": true/false}
 
-is_certain=true only if subject is clearly spam (score >= 0.9)"""
+is_certain=true ONLY if it's obvious malicious spam (score >= 0.95)"""
 
         return self._analyze(system_prompt, f"Subject: {subject}")
 
     def analyze_sender(self, sender: str) -> AnalysisResult:
         """Analyze sender address for spam indicators."""
-        system_prompt = """You are an email spam analyzer. Analyze ONLY the sender address.
+        system_prompt = """You are a conservative email spam analyzer. Analyze ONLY the sender address.
 
-IMPORTANT: Newsletters from legitimate companies are NOT spam.
+CRITICAL - These senders are LEGITIMATE (score 0.0-0.2):
+- Any @apple.com, @google.com, @microsoft.com, @amazon.com
+- Newsletter services (@mail.*, @news.*, @info.*, @newsletter.*)
+- Known brands (patreon, freeletics, waipu, temu, kleinanzeigen, adguard, etc.)
+- Publisher/media companies (rheinwerk, etc.)
+- Any recognizable company domain
 
-Spam indicators in sender:
-- Random characters in local part
-- Misspelled known domains (paypa1.com, amaz0n.com)
-- Suspicious free email domains for business claims
-- Display name doesn't match email domain
-- Known spam domains
+ONLY flag as spam (score 0.9+) if sender has:
+- Obvious typosquatting (paypa1.com, amaz0n.com, g00gle.com)
+- Random character strings in domain
+- .xyz, .top, .click domains with suspicious names
+- Clear impersonation attempts
+
+When in doubt, score LOW (0.0-0.3). Legitimate businesses use many different email domains.
 
 Respond with JSON only:
 {"spam_score": 0.0-1.0, "reason": "brief explanation", "is_certain": true/false}
 
-is_certain=true only if sender is clearly malicious (score >= 0.9)"""
+is_certain=true ONLY if sender is obviously malicious (score >= 0.95)"""
 
         return self._analyze(system_prompt, f"Sender: {sender}")
 
@@ -156,20 +171,27 @@ is_certain=true only if headers show clear forgery (score >= 0.9)"""
         # Limit body to avoid token overuse - privacy focused
         truncated_body = body[:1000] if len(body) > 1000 else body
 
-        system_prompt = """You are an email spam analyzer. Analyze the email content.
+        system_prompt = """You are a conservative email spam analyzer. Analyze the email content.
 
-IMPORTANT:
-- Newsletters you subscribed to are NOT spam
-- Marketing from legitimate companies is NOT spam
-- Unsubscribe links are NORMAL, not spam indicators
+CRITICAL - These are LEGITIMATE (score 0.0-0.3):
+- Newsletters with unsubscribe links
+- Marketing emails from brands
+- Product announcements
+- Account notifications
+- Receipts and confirmations
+- Social media digests
+- App notifications
+- Promotional offers from real companies
 
-Spam indicators in content:
-- Phishing attempts (fake login pages, credential requests)
-- Malicious links disguised as legitimate
-- Urgent financial requests
-- Too-good-to-be-true offers
-- Poor grammar in scam context
-- Requests for personal information
+ONLY flag as spam (score 0.9+) if content contains:
+- Phishing: fake login pages, credential harvesting
+- Scams: lottery wins, inheritance, crypto schemes
+- Malware: suspicious attachments, download links
+- Adult content spam
+- Advance fee fraud
+
+Normal marketing language is NOT spam. Urgency in legitimate notifications is NOT spam.
+When in doubt, score LOW (0.0-0.3).
 
 Respond with JSON only:
 {"spam_score": 0.0-1.0, "reason": "brief explanation", "is_certain": true/false}"""
