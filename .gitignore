@@ -42,7 +42,18 @@ Thumbs.db
 
 # Logs
 *.log
+*.log.*
 logs/
+
+# MailMind state
+mailmind_state.json
+mailmind_lists.json
+
+# Claude Code
+.claude/
+
+# Windows artifacts
+nul
 
 # Testing
 .pytest_cache/
