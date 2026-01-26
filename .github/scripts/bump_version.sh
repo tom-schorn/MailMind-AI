@@ -1,7 +1,7 @@
 #!/bin/bash
-# Bump version based on semver rules
+# Bump version based on 4-digit semver rules
 # Usage: bump_version.sh <current_version> <bump_type>
-# bump_type: major, minor, patch
+# bump_type: major, minor, patch, build
 
 set -e
 
@@ -10,19 +10,25 @@ BUMP_TYPE="$2"
 
 if [ -z "$CURRENT_VERSION" ] || [ -z "$BUMP_TYPE" ]; then
     echo "Usage: $0 <current_version> <bump_type>" >&2
-    echo "Example: $0 0.2.0 patch" >&2
+    echo "Example: $0 0.2.0.1 patch" >&2
     exit 1
 fi
 
-# Parse version
-if [[ ! "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-    echo "Error: Invalid version format '$CURRENT_VERSION'. Expected: X.Y.Z" >&2
+# Parse version (support both 3-digit and 4-digit)
+if [[ "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    MAJOR="${BASH_REMATCH[1]}"
+    MINOR="${BASH_REMATCH[2]}"
+    PATCH="${BASH_REMATCH[3]}"
+    BUILD="${BASH_REMATCH[4]}"
+elif [[ "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    MAJOR="${BASH_REMATCH[1]}"
+    MINOR="${BASH_REMATCH[2]}"
+    PATCH="${BASH_REMATCH[3]}"
+    BUILD=0
+else
+    echo "Error: Invalid version format '$CURRENT_VERSION'. Expected: X.Y.Z or X.Y.Z.B" >&2
     exit 1
 fi
-
-MAJOR="${BASH_REMATCH[1]}"
-MINOR="${BASH_REMATCH[2]}"
-PATCH="${BASH_REMATCH[3]}"
 
 # Calculate new version
 case "$BUMP_TYPE" in
@@ -30,21 +36,27 @@ case "$BUMP_TYPE" in
         MAJOR=$((MAJOR + 1))
         MINOR=0
         PATCH=0
+        BUILD=0
         ;;
     minor)
         MINOR=$((MINOR + 1))
         PATCH=0
+        BUILD=0
         ;;
     patch)
         PATCH=$((PATCH + 1))
+        BUILD=0
+        ;;
+    build)
+        BUILD=$((BUILD + 1))
         ;;
     *)
-        echo "Error: Invalid bump type '$BUMP_TYPE'. Expected: major, minor, or patch" >&2
+        echo "Error: Invalid bump type '$BUMP_TYPE'. Expected: major, minor, patch, or build" >&2
         exit 1
         ;;
 esac
 
-NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+NEW_VERSION="$MAJOR.$MINOR.$PATCH.$BUILD"
 
 # Update __init__.py
 INIT_FILE="src/mailmind/__init__.py"

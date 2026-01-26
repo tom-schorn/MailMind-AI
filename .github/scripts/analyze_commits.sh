@@ -20,7 +20,7 @@ if [ -z "$COMMITS" ]; then
     exit 0
 fi
 
-# Initialize bump type (priority: none < patch < minor < major)
+# Initialize bump type (priority: none < build < patch < minor < major)
 BUMP_TYPE="none"
 
 # Check for breaking changes (highest priority)
@@ -40,14 +40,9 @@ if [ "$BUMP_TYPE" = "none" ] && echo "$COMMITS" | grep -qE "^fix(\(.+\))?:"; the
     BUMP_TYPE="patch"
 fi
 
-# Check for any other conventional commit types (chore, refactor, perf, etc.)
-if [ "$BUMP_TYPE" = "none" ] && echo "$COMMITS" | grep -qE "^(chore|refactor|perf|build|ci|test|style)(\(.+\))?:"; then
-    BUMP_TYPE="patch"
-fi
-
-# If still none, default to patch for any commits
+# For any other commits (including conventional commits), bump BUILD number
 if [ "$BUMP_TYPE" = "none" ] && [ -n "$COMMITS" ]; then
-    BUMP_TYPE="patch"
+    BUMP_TYPE="build"
 fi
 
 echo "$BUMP_TYPE"
