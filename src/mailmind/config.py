@@ -4,6 +4,8 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 
@@ -40,6 +42,8 @@ class Config:
     anthropic_api_key: str
     spam: SpamConfig
     log_level: str
+    log_dir: str
+    log_retention_days: int
     analysis_limit: int  # Max emails to analyze on startup (0 = unlimited)
 
 
@@ -153,13 +157,43 @@ def load_config() -> Config:
         anthropic_api_key=_get_required("ANTHROPIC_API_KEY"),
         spam=spam,
         log_level=_get_optional("LOG_LEVEL", "INFO"),
+        log_dir=_get_optional("LOG_DIR", "logs"),
+        log_retention_days=_get_int("LOG_RETENTION_DAYS", 3),
         analysis_limit=_get_int("ANALYSIS_LIMIT", 50),
     )
 
 
-def setup_logging(level: str, log_file: str = "mailmind.log") -> None:
+def cleanup_old_logs(log_dir: str, days: int) -> None:
+    """Delete log files older than N days."""
+    cutoff = datetime.now() - timedelta(days=days)
+    log_path = Path(log_dir)
+
+    if not log_path.exists():
+        return
+
+    for log_file in log_path.glob("*.log*"):
+        try:
+            mtime = datetime.fromtimestamp(log_file.stat().st_mtime)
+            if mtime < cutoff:
+                log_file.unlink()
+                logging.info(f"Deleted old log: {log_file.name}")
+        except Exception as e:
+            logging.warning(f"Could not delete {log_file.name}: {e}")
+
+
+def setup_logging(
+    level: str,
+    log_dir: str = "logs",
+    retention_days: int = 3
+) -> None:
     """Configure logging for the application."""
-    from logging.handlers import RotatingFileHandler
+    from logging.handlers import TimedRotatingFileHandler
+
+    # Create logs directory
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+
+    # Cleanup old logs
+    cleanup_old_logs(log_dir, retention_days)
 
     numeric_level = getattr(logging, level.upper(), logging.INFO)
     log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -170,13 +204,16 @@ def setup_logging(level: str, log_file: str = "mailmind.log") -> None:
     console_handler.setStream(open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1))
     console_handler.setFormatter(logging.Formatter(log_format, date_format))
 
-    # File handler with rotation (max 100 lines ~ 10KB, keep 1 backup)
-    file_handler = RotatingFileHandler(
-        log_file,
-        maxBytes=10240,  # ~100 lines
-        backupCount=1,
+    # File handler with daily rotation
+    log_file = Path(log_dir) / f"{datetime.now().strftime('%Y-%m-%d')}.log"
+    file_handler = TimedRotatingFileHandler(
+        str(log_file),
+        when='midnight',
+        interval=1,
+        backupCount=retention_days,
         encoding='utf-8',
     )
+    file_handler.suffix = "%Y-%m-%d"
     file_handler.setFormatter(logging.Formatter(log_format, date_format))
 
     logging.basicConfig(

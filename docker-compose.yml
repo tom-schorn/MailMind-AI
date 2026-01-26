@@ -27,6 +27,8 @@ services:
       - ANALYSIS_LIMIT=${ANALYSIS_LIMIT:-50}
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_DIR=${LOG_DIR:-logs}
+      - LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS:-3}
     volumes:
       - mailmind-data:/app/data
     logging:
