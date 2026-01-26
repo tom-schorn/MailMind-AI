@@ -84,6 +84,10 @@ class TestDomainLists:
         assert lists2.is_blacklisted("user@spam.com")
 
     def test_get_lists(self, lists):
+        # Get initial count (default whitelist)
+        initial_whitelist = lists.get_whitelist()
+        initial_count = len(initial_whitelist)
+
         lists.whitelist("a@white.com")
         lists.whitelist("b@white.com")
         lists.blacklist("c@black.com")
@@ -93,5 +97,5 @@ class TestDomainLists:
 
         assert "white.com" in whitelist
         assert "black.com" in blacklist
-        assert len(whitelist) == 1  # Both emails have same domain
+        assert len(whitelist) == initial_count + 1  # +1 because both emails same domain
         assert len(blacklist) == 1

@@ -84,8 +84,8 @@ class WorkflowRunner:
         stopping_step: Optional[str] = None
         total_steps = 4
 
-        # Step 1: Analyze subject
-        result = self.steps.analyze_subject(email)
+        # Step 1: Analyze headers (FIRST - minimal data)
+        result = self.steps.analyze_headers(email)
         results.append(result)
         self._print_step(1, total_steps, result)
         if result.should_stop:
@@ -93,7 +93,7 @@ class WorkflowRunner:
             stopping_step = result.step_name
             console.early_exit("Certain spam detected")
         else:
-            # Step 2: Analyze sender
+            # Step 2: Analyze sender (SECOND)
             result = self.steps.analyze_sender(email)
             results.append(result)
             self._print_step(2, total_steps, result)
@@ -102,8 +102,8 @@ class WorkflowRunner:
                 stopping_step = result.step_name
                 console.early_exit("Certain spam detected")
             else:
-                # Step 3: Analyze headers
-                result = self.steps.analyze_headers(email)
+                # Step 3: Analyze subject (THIRD)
+                result = self.steps.analyze_subject(email)
                 results.append(result)
                 self._print_step(3, total_steps, result)
                 if result.should_stop:
@@ -111,7 +111,7 @@ class WorkflowRunner:
                     stopping_step = result.step_name
                     console.early_exit("Certain spam detected")
                 else:
-                    # Step 4: Analyze content
+                    # Step 4: Analyze content (LAST - most data)
                     result = self.steps.analyze_content(email)
                     results.append(result)
                     self._print_step(4, total_steps, result)
@@ -152,10 +152,10 @@ class WorkflowRunner:
 
         # Weights for each step
         weights = {
-            "subject": 0.2,
-            "sender": 0.25,
-            "headers": 0.25,
-            "content": 0.3,
+            "headers": 0.25,  # Step 1
+            "sender": 0.25,   # Step 2
+            "subject": 0.2,   # Step 3
+            "content": 0.3,   # Step 4
         }
 
         total_weight = 0.0

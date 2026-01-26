@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1.0] - 2026-01-26
+
+### Fixed
+- ANALYSIS_LIMIT now applies to spam folder categorization on startup
+- Workflow step order optimized: Headers → Sender → Subject → Content (better privacy + cost)
+- Unit test adapted for pre-populated whitelist (introduced in v0.4.2.0)
+
+### Changed
+- Spam categorization respects ANALYSIS_LIMIT for better performance with large spam folders
+
 ## [0.6.0.0] - 2026-01-26
 
 ### Added
