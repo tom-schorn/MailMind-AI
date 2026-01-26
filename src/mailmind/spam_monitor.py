@@ -1,11 +1,17 @@
 """Monitor spam folder for user-initiated moves."""
 
 import logging
-from typing import Dict, Set
+from typing import Dict, Set, TYPE_CHECKING
 
 from .imap.client import IMAPClient
 from .lists import DomainLists
 from .logging_format import console
+from .ai.claude import SpamCategory
+
+if TYPE_CHECKING:
+    from .ai.claude import ClaudeAnalyzer
+    from .workflow.spam_handler import SpamHandler
+    from .state import StateManager
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +29,16 @@ class SpamFolderMonitor:
         imap_client: IMAPClient,
         spam_folder: str,
         domain_lists: DomainLists,
+        analyzer: "ClaudeAnalyzer" = None,
+        spam_handler: "SpamHandler" = None,
+        state: "StateManager" = None,
     ):
         self.imap = imap_client
         self.spam_folder = spam_folder
         self.domain_lists = domain_lists
+        self.analyzer = analyzer
+        self.spam_handler = spam_handler
+        self.state = state
         self._spam_senders: Dict[str, str] = {}  # uid -> sender
         self._our_moves: Set[str] = set()  # UIDs we moved to spam
 
@@ -53,6 +65,76 @@ class SpamFolderMonitor:
             self.imap.select_folder()
         except Exception as e:
             logger.warning(f"Could not scan spam folder: {e}")
+
+    def categorize_existing_spam(self) -> None:
+        """Scan spam folder and categorize all uncategorized emails."""
+        if not self.analyzer or not self.spam_handler or not self.state:
+            logger.warning("Spam categorization disabled - missing dependencies")
+            return
+
+        console.print("\n[cyan]📂 Scanning spam folder for categorization...[/cyan]")
+
+        try:
+            # Select spam folder
+            self.imap.select_folder(self.spam_folder)
+            spam_uids = self.imap.get_all_uids()
+
+            if not spam_uids:
+                console.print("[dim]No emails in spam folder[/dim]")
+                self.imap.select_folder()
+                return
+
+            categorized = 0
+            skipped = 0
+
+            for uid in spam_uids:
+                # Skip if already processed
+                if self.state.is_analyzed(uid):
+                    skipped += 1
+                    continue
+
+                try:
+                    email = self.imap.fetch_email(uid)
+
+                    # Quick category determination (content analysis only)
+                    category = self._analyze_for_category(email)
+
+                    # Move to subfolder
+                    if category != SpamCategory.UNKNOWN and category != SpamCategory.LEGITIMATE:
+                        self.spam_handler.move_to_spam(email, category)
+                        categorized += 1
+
+                    # Mark as processed
+                    self.state.mark_analyzed(uid)
+
+                except Exception as e:
+                    logger.error(f"Failed to categorize spam {uid}: {e}")
+
+            console.print(
+                f"[green]✓[/green] Categorized {categorized} emails, skipped {skipped}"
+            )
+
+            # Return to inbox
+            self.imap.select_folder()
+
+        except Exception as e:
+            logger.error(f"Spam categorization failed: {e}")
+            try:
+                self.imap.select_folder()
+            except Exception:
+                pass
+
+    def _analyze_for_category(self, email) -> SpamCategory:
+        """Analyze email content to determine spam category."""
+        try:
+            # Use only content analysis for speed (1 API call instead of 4)
+            result = self.analyzer.analyze_content(
+                email.subject, email.body_text or email.body_html or ""
+            )
+            return result.category if result.category else SpamCategory.UNKNOWN
+        except Exception as e:
+            logger.error(f"Category analysis failed: {e}")
+            return SpamCategory.UNKNOWN
 
     def check_for_changes(self) -> None:
         """Check spam folder for user-initiated changes."""
