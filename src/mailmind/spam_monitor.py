@@ -66,7 +66,7 @@ class SpamFolderMonitor:
         except Exception as e:
             logger.warning(f"Could not scan spam folder: {e}")
 
-    def categorize_existing_spam(self) -> None:
+    def categorize_existing_spam(self, limit: int = 0) -> None:
         """Scan spam folder and categorize all uncategorized emails."""
         if not self.analyzer or not self.spam_handler or not self.state:
             logger.warning("Spam categorization disabled - missing dependencies")
@@ -77,29 +77,21 @@ class SpamFolderMonitor:
         try:
             # Select spam folder
             self.imap.select_folder(self.spam_folder)
+            spam_uids = self.imap.get_all_uids()
+
+            # Filter unanalyzed
+            unanalyzed = [uid for uid in spam_uids if not self.state.is_analyzed(uid)]
+
+            # Apply limit
+            if limit > 0 and len(unanalyzed) > limit:
+                console.status(f"Found {len(unanalyzed)} unanalyzed spam, limiting to {limit}")
+                unanalyzed = unanalyzed[-limit:]  # Most recent
 
             categorized = 0
             skipped = 0
 
-            # Process emails one at a time, refetching UIDs each iteration
-            while True:
-                spam_uids = self.imap.get_all_uids()
-
-                if not spam_uids:
-                    break  # No more emails
-
-                # Find first unanalyzed UID
-                uid = None
-                for u in spam_uids:
-                    if not self.state.is_analyzed(u):
-                        uid = u
-                        break
-
-                if uid is None:
-                    # All remaining emails are already analyzed
-                    skipped += len(spam_uids)
-                    break
-
+            # Process emails
+            for uid in unanalyzed:
                 try:
                     email = self.imap.fetch_email(uid)
                     category = self._analyze_for_category(email)
@@ -121,7 +113,6 @@ class SpamFolderMonitor:
 
                 except Exception as e:
                     logger.error(f"Failed to categorize spam {uid}: {e}")
-                    # Move to next email on error
 
             console.status(
                 f"✓ Categorized {categorized} emails, skipped {skipped}"

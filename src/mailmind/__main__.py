@@ -103,7 +103,7 @@ def main() -> int:
         spam_monitor.initial_scan()
 
         # Categorize existing spam emails into subfolders
-        spam_monitor.categorize_existing_spam()
+        spam_monitor.categorize_existing_spam(config.analysis_limit)
 
         # Process unanalyzed emails (limited to most recent)
         console.status("Checking for unanalyzed emails...")
