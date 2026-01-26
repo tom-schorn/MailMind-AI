@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.3.0] - 2026-01-26
 
 ### Fixed
+- display actual version dynamically instead of hardcoded v0.2.0
+
+
+## [0.6.3.0] - 2026-01-26
+
+### Fixed
 - Version display now shows actual version from __version__ instead of hardcoded "v0.2.0"
 
 ## [0.6.2.0] - 2026-01-26
