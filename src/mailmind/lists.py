@@ -9,6 +9,39 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_FILE = "mailmind_lists.json"
 
+# Default whitelist for common legitimate domains
+DEFAULT_WHITELIST = {
+    # Tech companies
+    "apple.com",
+    "icloud.com",
+    "google.com",
+    "microsoft.com",
+    "amazon.com",
+    "amazon.de",
+    # Dating services
+    "parship.com",
+    "parship.de",
+    "mail.parship.com",
+    "lovescout24.de",
+    "elitepartner.de",
+    "lemonswan.de",
+    # Shopping & Payment
+    "ebay.de",
+    "ebay.com",
+    "paypal.com",
+    "paypal.de",
+    "klarna.com",
+    "klarna.de",
+    # Streaming
+    "netflix.com",
+    "spotify.com",
+    # Social & Services
+    "facebook.com",
+    "instagram.com",
+    "linkedin.com",
+    "xing.com",
+}
+
 
 class DomainLists:
     """Manage whitelisted and blacklisted sender domains."""
@@ -18,6 +51,12 @@ class DomainLists:
         self._whitelist: Set[str] = set()
         self._blacklist: Set[str] = set()
         self._load()
+
+        # Pre-populate whitelist with defaults if empty
+        if not self._whitelist:
+            self._whitelist = DEFAULT_WHITELIST.copy()
+            self._save()
+            logger.info(f"Pre-populated whitelist with {len(self._whitelist)} default domains")
 
     def _load(self) -> None:
         """Load lists from file."""

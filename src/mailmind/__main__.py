@@ -41,7 +41,7 @@ def main() -> int:
         return 1
 
     # Setup logging
-    setup_logging(config.log_level)
+    setup_logging(config.log_level, config.log_dir, config.log_retention_days)
     console.info("MailMind-AI v0.2.0 starting")
     console.status(f"Model: {config.spam.model} | Sensitivity: {config.spam.sensitivity}/10")
 

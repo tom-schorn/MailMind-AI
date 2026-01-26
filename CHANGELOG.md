@@ -45,6 +45,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - modify and move spam emails correctly
 - only analyze new emails, fix unicode logging on Windows
 
+## [0.4.3.0] - 2026-01-26
+
+### Changed
+- Logging-System: Tagesweise Logs im `logs/` Unterordner
+- Log-Dateien werden automatisch nach 3 Tagen gelöscht
+- Log-Rotation erfolgt um Mitternacht statt größenbasiert
+- Konfigurierbar via LOG_DIR und LOG_RETENTION_DAYS
+
+## [0.4.2.0] - 2026-01-26
+
+### Added
+- Default whitelist with common legitimate domains (Apple, Parship, PayPal, Netflix, etc.)
+- Whitelist auto-populates on first run with 25+ trusted domains
+- Extended known brands in spam detection: Parship, Lovescout24, Elitepartner, eBay, Klarna, Spotify
+
+### Changed
+- Improved SPAM_SENSITIVITY documentation in .env.example with detailed explanations for each level
+- Sender analysis now recognizes more dating services and shopping platforms
+
+### Fixed
+- Reduced false positives for legitimate services like Parship and Apple
+- Better recognition of newsletter subdomains and known brands
+
+## [0.4.1.0] - 2026-01-26
+
+### Fixed
+- Fixed UID invalidation during spam categorization by refetching UIDs after each move
+- Fixed emails remaining in spam folder: only mark as analyzed when successfully categorized
+- LEGITIMATE emails in spam folder are no longer marked as analyzed and will be reanalyzed
+
+### Added
+- Spam/Unknown subfolder for emails that cannot be clearly categorized
+- Version-based state reset mechanism for mailmind_state.json
+- State version tracking to automatically reset analyzed UIDs on upgrades
+
+### Changed
+- UNKNOWN-categorized emails are now moved to Spam/Unknown instead of staying in main folder
+- State file now includes version field for upgrade detection
 
 ## [0.4.0.0] - 2026-01-26
 
