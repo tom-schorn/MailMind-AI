@@ -72,7 +72,7 @@ class SpamFolderMonitor:
             logger.warning("Spam categorization disabled - missing dependencies")
             return
 
-        console.print("\n[cyan]📂 Scanning spam folder for categorization...[/cyan]")
+        console.status("\n📂 Scanning spam folder for categorization...")
 
         try:
             # Select spam folder
@@ -80,7 +80,7 @@ class SpamFolderMonitor:
             spam_uids = self.imap.get_all_uids()
 
             if not spam_uids:
-                console.print("[dim]No emails in spam folder[/dim]")
+                console.status("No emails in spam folder")
                 self.imap.select_folder()
                 return
 
@@ -110,8 +110,8 @@ class SpamFolderMonitor:
                 except Exception as e:
                     logger.error(f"Failed to categorize spam {uid}: {e}")
 
-            console.print(
-                f"[green]✓[/green] Categorized {categorized} emails, skipped {skipped}"
+            console.status(
+                f"✓ Categorized {categorized} emails, skipped {skipped}"
             )
 
             # Return to inbox

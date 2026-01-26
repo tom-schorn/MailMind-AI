@@ -1,15 +1,10 @@
-name: CI/CD
+name: CI
 
 on:
   push:
     branches: [master]
-    tags: ['v*']
   pull_request:
     branches: [master]
-
-env:
-  REGISTRY: registry.ts-entwicklung.de
-  IMAGE_NAME: mailmind-ai
 
 jobs:
   test:
@@ -32,74 +27,3 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests/ -v
-
-  build:
-    name: Build Docker Image
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.event_name == 'push'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Extract version
-        id: version
-        run: |
-          VERSION=$(python .github/scripts/get_version.py)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
-
-      - name: Check if pre-release
-        id: prerelease
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          if [ "$MAJOR" -lt 1 ]; then
-            echo "tag=pre-latest" >> $GITHUB_OUTPUT
-            echo "Using pre-latest tag (version < 1.0.0)"
-          else
-            echo "tag=latest" >> $GITHUB_OUTPUT
-            echo "Using latest tag (version >= 1.0.0)"
-          fi
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern=v{{version}}
-            type=semver,pattern={{version}}
-            type=semver,pattern=v{{major}}.{{minor}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=${{ steps.prerelease.outputs.tag }}
-            type=sha,prefix=
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          build-args: |
-            VERSION=${{ steps.version.outputs.version }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
