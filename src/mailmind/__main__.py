@@ -7,6 +7,7 @@ from threading import Event
 
 from dotenv import load_dotenv
 
+from . import __version__
 from .ai.claude import ClaudeAnalyzer
 from .config import ConfigError, load_config, setup_logging
 from .imap.client import Email, IMAPClient, IMAPError
@@ -42,7 +43,7 @@ def main() -> int:
 
     # Setup logging
     setup_logging(config.log_level, config.log_dir, config.log_retention_days)
-    console.info("MailMind-AI v0.2.0 starting")
+    console.info(f"MailMind-AI v{__version__} starting")
     console.status(f"Model: {config.spam.model} | Sensitivity: {config.spam.sensitivity}/10")
 
     # Setup signal handlers
