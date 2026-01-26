@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.1.0] - 2026-01-26
+## [0.6.2.0] - 2026-01-26
 
 ### Fixed
-- apply ANALYSIS_LIMIT to spam categorization and optimize workflow order (#4)
+- Deploy workflow now runs after Version Bump to deploy correct version
+- Docker images now tagged with actual version instead of pre-bump version
 
+### Changed
+- deploy-pre-release.yml triggered by workflow_run instead of push
 
 ## [0.6.1.0] - 2026-01-26
 
