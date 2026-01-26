@@ -61,15 +61,23 @@ def main() -> int:
         sensitivity=config.spam.sensitivity,
         custom_prompt=config.spam.prompt,
     )
-    spam_monitor = SpamFolderMonitor(imap, config.imap.spam_folder, domain_lists)
     runner = WorkflowRunner(
         imap,
         analyzer,
         config.imap.spam_folder,
         config.spam.threshold,
         domain_lists,
-        on_spam_move=spam_monitor.record_our_move,
     )
+    spam_monitor = SpamFolderMonitor(
+        imap,
+        config.imap.spam_folder,
+        domain_lists,
+        analyzer=analyzer,
+        spam_handler=runner.spam_handler,
+        state=state,
+    )
+    # Set callback after spam_monitor is created
+    runner.on_spam_move = spam_monitor.record_our_move
 
     def process_email(email: Email) -> None:
         """Callback for processing new emails."""
@@ -93,6 +101,9 @@ def main() -> int:
 
         # Initial spam folder scan for learning
         spam_monitor.initial_scan()
+
+        # Categorize existing spam emails into subfolders
+        spam_monitor.categorize_existing_spam()
 
         # Process unanalyzed emails (limited to most recent)
         console.status("Checking for unanalyzed emails...")
