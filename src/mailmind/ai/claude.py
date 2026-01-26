@@ -162,7 +162,7 @@ SPAM INDICATORS (phishing category):
 LEGITIMATE (category: legitimate):
 - Major companies: @apple.com, @google.com, @microsoft.com, @amazon.com
 - Newsletter subdomains: @mail.*, @news.*, @newsletter.*, @info.*
-- Known brands: patreon, freeletics, waipu, temu, kleinanzeigen, etc.
+- Known brands: patreon, freeletics, waipu, temu, kleinanzeigen, parship, lovescout24, elitepartner, lemonswan, ebay, paypal, klarna, netflix, spotify, etc.
 - Recognizable company domains
 
 Respond with JSON only:

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2.0] - 2026-01-26
+
+### Added
+- Default whitelist with common legitimate domains (Apple, Parship, PayPal, Netflix, etc.)
+- Whitelist auto-populates on first run with 25+ trusted domains
+- Extended known brands in spam detection: Parship, Lovescout24, Elitepartner, eBay, Klarna, Spotify
+
+### Changed
+- Improved SPAM_SENSITIVITY documentation in .env.example with detailed explanations for each level
+- Sender analysis now recognizes more dating services and shopping platforms
+
+### Fixed
+- Reduced false positives for legitimate services like Parship and Apple
+- Better recognition of newsletter subdomains and known brands
+
 ## [0.4.1.0] - 2026-01-26
 
 ### Fixed
