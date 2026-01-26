@@ -1,0 +1,71 @@
+name: Deploy - p-registry (pre-release)
+
+on:
+  push:
+    branches: [master]
+
+env:
+  REGISTRY: registry.ts-entwicklung.de
+  IMAGE_NAME: mailmind-ai
+
+jobs:
+  deploy:
+    name: Deploy Pre-Release
+    runs-on: ubuntu-latest
+    if: |
+      !contains(github.event.head_commit.message, '[skip ci]') &&
+      !contains(github.event.head_commit.message, '[skip deploy]')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(python .github/scripts/get_version.py)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Check if pre-release
+        id: prerelease
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          if [ "$MAJOR" -ge 1 ]; then
+            echo "Version >= 1.0.0 - skipping pre-release deployment"
+            exit 0
+          fi
+          echo "Pre-release version detected: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}-pre
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pre-latest
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}-pre
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
