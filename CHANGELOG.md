@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0.0] - 2026-01-26
+
+### Added
+- implement 4-digit versioning scheme and deployment workflows
+- add separate workflows for pre-release and release deployments
+- add automatic spam categorization on startup
+- add pre-latest Docker tag for versions < 1.0.0
+- implement automatic versioning system
+- add whitelist/blacklist system with spam folder monitoring
+- add configurable sensitivity, model selection, and spam categories
+- add structured console output for better readability
+- add configurable analysis limit (default 50)
+- add state persistence and log file with rotation
+- add auto-detection for SSL/STARTTLS based on port
+- auto-install dependencies on startup
+- add root entry point for easier execution
+- add Docker setup with multi-stage build
+- add workflow runner and application entry point
+- add spam handler with subject marking and explanation
+- add workflow analysis steps
+- add Claude AI integration for spam analysis
+- add IMAP client with IDLE and polling support
+- add configuration management
+
+### Changed
+- bump version to 0.3.0 [skip ci]
+- improve Docker registry tagging strategy
+- prepare v0.2.0 release
+- update Docker setup for v0.2.0
+- update gitignore with state and log files
+
+### Fixed
+- replace console.print() with console.status() in spam_monitor
+- disable email modification, only move spam to folder
+- improve spam detection prompts to reduce false positives
+- modify and move spam emails correctly
+- only analyze new emails, fix unicode logging on Windows
+
 ## [0.4.3.0] - 2026-01-26
 
 ### Changed
