@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1.0] - 2026-01-26
+
+### Fixed
+- Fixed UID invalidation during spam categorization by refetching UIDs after each move
+- Fixed emails remaining in spam folder: only mark as analyzed when successfully categorized
+- LEGITIMATE emails in spam folder are no longer marked as analyzed and will be reanalyzed
+
+### Added
+- Spam/Unknown subfolder for emails that cannot be clearly categorized
+- Version-based state reset mechanism for mailmind_state.json
+- State version tracking to automatically reset analyzed UIDs on upgrades
+
+### Changed
+- UNKNOWN-categorized emails are now moved to Spam/Unknown instead of staying in main folder
+- State file now includes version field for upgrade detection
+
 ## [0.4.0.0] - 2026-01-26
 
 ### Added

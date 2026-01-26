@@ -17,6 +17,7 @@ class StateManager:
     def __init__(self, state_file: str = DEFAULT_STATE_FILE):
         self.state_file = Path(state_file)
         self._analyzed_uids: Set[str] = set()
+        self._state_version = "0.4.1.0"
         self._load()
 
     def _load(self) -> None:
@@ -25,8 +26,18 @@ class StateManager:
             try:
                 with open(self.state_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    self._analyzed_uids = set(data.get("analyzed_uids", []))
-                logger.info(f"Loaded {len(self._analyzed_uids)} analyzed UIDs from state")
+
+                    # Check version and reset if outdated
+                    file_version = data.get("version", "0.0.0.0")
+                    if file_version < self._state_version:
+                        logger.info(
+                            f"State upgraded from {file_version} to {self._state_version}, resetting analyzed UIDs"
+                        )
+                        self._analyzed_uids = set()
+                        self._save()  # Save new version immediately
+                    else:
+                        self._analyzed_uids = set(data.get("analyzed_uids", []))
+                        logger.info(f"Loaded {len(self._analyzed_uids)} analyzed UIDs from state")
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Failed to load state file: {e}")
                 self._analyzed_uids = set()
@@ -35,7 +46,14 @@ class StateManager:
         """Save state to file."""
         try:
             with open(self.state_file, "w", encoding="utf-8") as f:
-                json.dump({"analyzed_uids": list(self._analyzed_uids)}, f)
+                json.dump(
+                    {
+                        "version": self._state_version,
+                        "analyzed_uids": list(self._analyzed_uids),
+                    },
+                    f,
+                    indent=2,
+                )
         except IOError as e:
             logger.error(f"Failed to save state file: {e}")
 

@@ -105,13 +105,19 @@ class SpamFolderMonitor:
                     category = self._analyze_for_category(email)
 
                     if category != SpamCategory.UNKNOWN and category != SpamCategory.LEGITIMATE:
+                        # Clear category: move to category folder and mark as analyzed
                         self.spam_handler.move_to_spam(email, category)
+                        self.state.mark_analyzed(uid)
+                        categorized += 1
+                    elif category == SpamCategory.UNKNOWN:
+                        # UNKNOWN: move to Spam/Unknown folder and mark as analyzed
+                        self.spam_handler.move_to_spam(email, SpamCategory.UNKNOWN)
+                        self.state.mark_analyzed(uid)
                         categorized += 1
                     else:
-                        # Email stays in spam folder - mark as analyzed
+                        # LEGITIMATE: do not mark as analyzed, will be reanalyzed next time
                         skipped += 1
-
-                    self.state.mark_analyzed(uid)
+                        logger.debug(f"Skipped email {uid} (category: {category})")
 
                 except Exception as e:
                     logger.error(f"Failed to categorize spam {uid}: {e}")

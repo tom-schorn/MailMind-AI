@@ -15,6 +15,7 @@ CATEGORY_FOLDERS = {
     SpamCategory.SCAM: "Scam",
     SpamCategory.MALWARE: "Malware",
     SpamCategory.ADULT: "Adult",
+    SpamCategory.UNKNOWN: "Unknown",
 }
 
 
