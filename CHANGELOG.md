@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.2.0] - 2026-01-26
 
 ### Fixed
+- deploy workflow runs after version bump to use correct version (#5)
+
+
+## [0.6.2.0] - 2026-01-26
+
+### Fixed
 - Deploy workflow now runs after Version Bump to deploy correct version
 - Docker images now tagged with actual version instead of pre-bump version
 
