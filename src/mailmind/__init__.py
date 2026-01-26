@@ -1,3 +1,3 @@
 """MailMind-AI: E-Mail spam detection agent."""
 
-__version__ = "0.3.0.0"
+__version__ = "0.4.0.0"
