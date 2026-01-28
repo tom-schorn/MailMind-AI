@@ -77,27 +77,43 @@ class SpamFolderMonitor:
         try:
             # Select spam folder
             self.imap.select_folder(self.spam_folder)
-            spam_uids = self.imap.get_all_uids()
-
-            # Filter unanalyzed
-            unanalyzed = [uid for uid in spam_uids if not self.state.is_analyzed(uid)]
-
-            # Apply limit
-            if limit > 0 and len(unanalyzed) > limit:
-                console.status(f"Found {len(unanalyzed)} unanalyzed spam, limiting to {limit}")
-                unanalyzed = unanalyzed[-limit:]  # Most recent
 
             categorized = 0
             skipped = 0
+            total_limit = limit  # Store original limit
 
-            # Process emails
-            for uid in unanalyzed:
+            # Process emails one by one, refreshing UID list after each move to avoid stale UIDs
+            while True:
+                # Get current UIDs in spam folder
+                spam_uids = self.imap.get_all_uids()
+
+                # Filter unanalyzed
+                unanalyzed = [uid for uid in spam_uids if not self.state.is_analyzed(uid)]
+
+                # Check if we reached limit or no more emails
+                if not unanalyzed:
+                    break
+                if total_limit > 0 and categorized >= total_limit:
+                    break
+
+                # Apply limit to remaining count
+                if total_limit > 0:
+                    remaining = total_limit - categorized
+                    if len(unanalyzed) > remaining:
+                        console.status(f"Found {len(unanalyzed)} unanalyzed spam, limiting to {remaining} more")
+                        unanalyzed = unanalyzed[-remaining:]  # Most recent
+
+                # Process only the first email, then refresh UID list
+                uid = unanalyzed[0]
+
                 try:
                     email = self.imap.fetch_email(uid)
                 except IMAPError as e:
                     # UID no longer exists (moved/deleted by concurrent operation)
                     if "Failed to fetch email" in str(e):
                         logger.debug(f"Email {uid} no longer exists, skipping")
+                        # Mark as analyzed to avoid reprocessing
+                        self.state.mark_analyzed(uid)
                         continue
                     else:
                         logger.error(f"Failed to fetch spam {uid}: {e}")
@@ -126,6 +142,7 @@ class SpamFolderMonitor:
 
                 except Exception as e:
                     logger.error(f"Failed to process spam {uid}: {e}")
+                    # Continue to next email even if processing failed
 
             console.status(
                 f"✓ Categorized {categorized} emails, skipped {skipped}"
