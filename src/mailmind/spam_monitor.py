@@ -103,8 +103,8 @@ class SpamFolderMonitor:
                         console.status(f"Found {len(unanalyzed)} unanalyzed spam, limiting to {remaining} more")
                         unanalyzed = unanalyzed[-remaining:]  # Most recent
 
-                # Process only the first email, then refresh UID list
-                uid = unanalyzed[0]
+                # Process newest email first (highest UID = most recent), then refresh UID list
+                uid = unanalyzed[-1]
 
                 try:
                     email = self.imap.fetch_email(uid)
