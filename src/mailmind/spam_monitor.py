@@ -79,7 +79,7 @@ class SpamFolderMonitor:
             self.imap.select_folder(self.spam_folder)
 
             categorized = 0
-            skipped = 0
+            restored = 0  # Legitimate emails moved back to inbox
             total_limit = limit  # Store original limit
 
             # Process emails one by one, refreshing UID list after each move to avoid stale UIDs
@@ -136,16 +136,24 @@ class SpamFolderMonitor:
                         self.state.mark_analyzed(uid)
                         categorized += 1
                     else:
-                        # LEGITIMATE: do not mark as analyzed, will be reanalyzed next time
-                        skipped += 1
-                        logger.debug(f"Skipped email {uid} (category: {category})")
+                        # LEGITIMATE: false positive, move back to inbox
+                        inbox_folder = self.imap.config.folder
+                        try:
+                            self.imap.move_to_folder(uid, inbox_folder)
+                            self.state.mark_analyzed(uid)
+                            # Whitelist sender to prevent future false positives
+                            self.domain_lists.whitelist(email.sender)
+                            restored += 1
+                            logger.info(f"Restored legitimate email {uid} to {inbox_folder}")
+                        except Exception as e:
+                            logger.error(f"Failed to restore email {uid} to inbox: {e}")
 
                 except Exception as e:
                     logger.error(f"Failed to process spam {uid}: {e}")
                     # Continue to next email even if processing failed
 
             console.status(
-                f"✓ Categorized {categorized} emails, skipped {skipped}"
+                f"✓ Categorized {categorized} emails, restored {restored} to inbox"
             )
 
             # Return to inbox
