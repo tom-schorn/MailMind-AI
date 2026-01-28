@@ -3,7 +3,7 @@
 import logging
 from typing import Dict, Set, TYPE_CHECKING
 
-from .imap.client import IMAPClient
+from .imap.client import IMAPClient, IMAPError
 from .lists import DomainLists
 from .logging_format import console
 from .ai.claude import SpamCategory
@@ -94,6 +94,19 @@ class SpamFolderMonitor:
             for uid in unanalyzed:
                 try:
                     email = self.imap.fetch_email(uid)
+                except IMAPError as e:
+                    # UID no longer exists (moved/deleted by concurrent operation)
+                    if "Failed to fetch email" in str(e):
+                        logger.debug(f"Email {uid} no longer exists, skipping")
+                        continue
+                    else:
+                        logger.error(f"Failed to fetch spam {uid}: {e}")
+                        continue
+                except Exception as e:
+                    logger.error(f"Failed to categorize spam {uid}: {e}")
+                    continue
+
+                try:
                     category = self._analyze_for_category(email)
 
                     if category != SpamCategory.UNKNOWN and category != SpamCategory.LEGITIMATE:
@@ -112,7 +125,7 @@ class SpamFolderMonitor:
                         logger.debug(f"Skipped email {uid} (category: {category})")
 
                 except Exception as e:
-                    logger.error(f"Failed to categorize spam {uid}: {e}")
+                    logger.error(f"Failed to process spam {uid}: {e}")
 
             console.status(
                 f"✓ Categorized {categorized} emails, skipped {skipped}"
