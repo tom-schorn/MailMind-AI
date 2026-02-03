@@ -62,3 +62,9 @@ htmlcov/
 
 # Plan files
 PLAN-*.md
+
+# Database
+storage.db
+
+# Templates (original)
+NiceAdmin-pro-Template/
