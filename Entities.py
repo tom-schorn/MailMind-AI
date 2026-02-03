@@ -1,35 +1,68 @@
-import flask_sqlalchemy
+from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session
+from sqlalchemy import create_engine
 
-db = flask_sqlalchemy.SQLAlchemy()
 
-class EmailRule(db.Model):
-    __name__ = "emailrule"
+class Base(DeclarativeBase):
+    pass
 
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    enabled = db.Column(db.Boolean, default=True)
-    condition = db.Column(db.Text, nullable=False)
-    actions = db.Column(db.Text, nullable=False)
+class EmailCredential(Base):
+    __tablename__ = "emailcredential"
 
-    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
-    changed_at = db.Column(db.DateTime, onupdate=db.func.current_timestamp())
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email_address: Mapped[str] = mapped_column(String(100), nullable=False)
+    host: Mapped[str] = mapped_column(String(100), nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False)
+    use_ssl: Mapped[bool] = mapped_column(Boolean, default=False)
+    use_tls: Mapped[bool] = mapped_column(Boolean, default=False)
+    username: Mapped[str] = mapped_column(String(100), nullable=False)
+    password: Mapped[str] = mapped_column(String(255), nullable=False)
 
-class RuleCondition(db.Model):
+    created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
+    changed_at: Mapped[DateTime] = mapped_column(DateTime, onupdate=func.current_timestamp())
+
+
+class EmailRule(Base):
+    __tablename__ = "emailrule"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    condition: Mapped[str] = mapped_column(Text, nullable=False)
+    actions: Mapped[str] = mapped_column(Text, nullable=False)
+
+    created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
+    changed_at: Mapped[DateTime] = mapped_column(DateTime, onupdate=func.current_timestamp())
+
+
+class RuleCondition(Base):
     __tablename__ = "rulecondition"
 
-    id = db.Column(db.Integer, primary_key=True)
-    rule_id = db.Column(db.Integer, ddb.ForeignKey('emailrule.id'), nullable=False)
-    field = db.Column(db.String(100), nullable=False)
-    operator = db.Column(db.String(20), nullable=False)
-    value = db.Column(db.String(255), nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailrule.id'), nullable=False)
+    field: Mapped[str] = mapped_column(String(100), nullable=False)
+    operator: Mapped[str] = mapped_column(String(20), nullable=False)
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
 
-class RuleAction(db.Model):
+
+class RuleAction(Base):
     __tablename__ = "ruleaction"
 
-    id = flask_sqlalchemy.Column(db.Integer, primary_key=True)
-    rule_id = db.Column(db.Integer, db.ForeignKey('emailrule.id'), nullable=False)
-    action_type = db.Column(db.String(50), nullable=False)
-    action_value = db.Column(db.String(255), nullable=False)
-    action_type = db.Column(db.String(50), nullable=False)
-    folder = db.Column(db.String(200), nullable=True)
-    label = db.Column(db.String(200), nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailrule.id'), nullable=False)
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    action_value: Mapped[str] = mapped_column(String(255), nullable=False)
+    folder: Mapped[str] = mapped_column(String(200), nullable=True)
+    label: Mapped[str] = mapped_column(String(200), nullable=True)
+
+
+def create_session(engine) -> Session:
+    """Creates a new database session"""
+    from sqlalchemy.orm import sessionmaker
+    SessionLocal = sessionmaker(bind=engine)
+    return SessionLocal()
+
+
+def init_db(engine):
+    """Creates all tables if they don't exist"""
+    Base.metadata.create_all(engine)
