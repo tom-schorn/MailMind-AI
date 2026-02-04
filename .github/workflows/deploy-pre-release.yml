@@ -38,12 +38,12 @@ jobs:
         id: prerelease
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          if [ "$MAJOR" -ge 1 ]; then
-            echo "Version >= 1.0.0 - skipping pre-release deployment"
+          if [[ "$VERSION" == *"-pre"* ]]; then
+            echo "Pre-release version detected: $VERSION"
+          else
+            echo "Not a pre-release version - skipping"
             exit 0
           fi
-          echo "Pre-release version detected: $VERSION"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
