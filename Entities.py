@@ -1,5 +1,5 @@
 from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, relationship
 from sqlalchemy import create_engine
 
 
@@ -34,6 +34,9 @@ class EmailRule(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
     changed_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp(), onupdate=func.current_timestamp())
 
+    conditions = relationship("RuleCondition", back_populates="rule", cascade="all, delete-orphan")
+    rule_actions = relationship("RuleAction", back_populates="rule", cascade="all, delete-orphan")
+
 
 class RuleCondition(Base):
     __tablename__ = "rulecondition"
@@ -43,6 +46,8 @@ class RuleCondition(Base):
     field: Mapped[str] = mapped_column(String(100), nullable=False)
     operator: Mapped[str] = mapped_column(String(20), nullable=False)
     value: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    rule = relationship("EmailRule", back_populates="conditions")
 
 
 class RuleAction(Base):
@@ -54,6 +59,8 @@ class RuleAction(Base):
     action_value: Mapped[str] = mapped_column(String(255), nullable=False)
     folder: Mapped[str] = mapped_column(String(200), nullable=True)
     label: Mapped[str] = mapped_column(String(200), nullable=True)
+
+    rule = relationship("EmailRule", back_populates="rule_actions")
 
 
 def create_session(engine) -> Session:

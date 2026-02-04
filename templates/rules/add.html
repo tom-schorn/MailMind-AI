@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+
+{% block title %}Add Email Rule - MailMind AI{% endblock %}
+
+{% block page_title %}Add Email Rule{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('list_rules') }}">Email Rules</a></li>
+<li class="breadcrumb-item active">Add</li>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="row">
+    <div class="col-lg-10">
+
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">New Email Rule</h5>
+
+          <form class="row g-3" method="POST" action="{{ url_for('add_rule') }}">
+            <!-- Basic Fields -->
+            <div class="col-md-8">
+              <label for="name" class="form-label">Rule Name</label>
+              <input type="text" class="form-control" id="name" name="name" required>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Enabled</label>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="enabled" name="enabled" checked>
+                <label class="form-check-label" for="enabled">
+                  Rule is active
+                </label>
+              </div>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Condition Logic</label>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="logic" id="logic_and" value="AND" checked>
+                <label class="form-check-label" for="logic_and">
+                  AND (all conditions must match)
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="logic" id="logic_or" value="OR">
+                <label class="form-check-label" for="logic_or">
+                  OR (at least one condition must match)
+                </label>
+              </div>
+            </div>
+
+            <!-- Conditions Section -->
+            <div class="col-md-12">
+              <hr>
+              <h6>Conditions</h6>
+              <div id="conditions-container">
+                <div class="condition-row mb-2">
+                  <div class="row g-2">
+                    <div class="col-md-3">
+                      <select name="condition_field_0" class="form-select" required>
+                        <option value="from">From (Absender)</option>
+                        <option value="subject">Subject (Betreff)</option>
+                        <option value="body">Body (Nachricht)</option>
+                        <option value="to">To (Empfänger)</option>
+                        <option value="header">Header</option>
+                      </select>
+                    </div>
+                    <div class="col-md-3">
+                      <select name="condition_operator_0" class="form-select" required>
+                        <option value="contains">contains (enthält)</option>
+                        <option value="equals">equals (ist gleich)</option>
+                        <option value="not_equals">not equals (ist nicht gleich)</option>
+                        <option value="starts_with">starts with (beginnt mit)</option>
+                        <option value="ends_with">ends with (endet mit)</option>
+                        <option value="greater_than">greater than (>)</option>
+                        <option value="less_than">less than (<)</option>
+                        <option value="greater_equal">greater or equal (>=)</option>
+                        <option value="less_equal">less or equal (<=)</option>
+                        <option value="date_older_than">date older than (älter als X Tage)</option>
+                      </select>
+                    </div>
+                    <div class="col-md-5">
+                      <input type="text" name="condition_value_0" class="form-control" placeholder="Value" required>
+                    </div>
+                    <div class="col-md-1">
+                      <button type="button" class="btn btn-danger btn-sm" onclick="removeCondition(this)">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="btn btn-sm btn-secondary" onclick="addCondition()">
+                <i class="bi bi-plus-circle"></i> Add Condition
+              </button>
+            </div>
+
+            <!-- Actions Section -->
+            <div class="col-md-12">
+              <hr>
+              <h6>Actions</h6>
+              <div id="actions-container">
+                <div class="action-row mb-2">
+                  <div class="row g-2">
+                    <div class="col-md-3">
+                      <select name="action_type_0" class="form-select action-type-select" required onchange="toggleActionFields(this)">
+                        <option value="move_to_folder">Move to Folder</option>
+                        <option value="copy_to_folder">Copy to Folder</option>
+                        <option value="add_label">Add Label</option>
+                        <option value="mark_as_read">Mark as Read</option>
+                        <option value="delete">Delete</option>
+                        <option value="modify_subject">Modify Subject</option>
+                      </select>
+                    </div>
+                    <div class="col-md-8">
+                      <input type="text" name="action_value_0" class="form-control action-value" placeholder="Folder/Label/Subject Pattern" required>
+                    </div>
+                    <div class="col-md-1">
+                      <button type="button" class="btn btn-danger btn-sm" onclick="removeAction(this)">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="btn btn-sm btn-secondary" onclick="addAction()">
+                <i class="bi bi-plus-circle"></i> Add Action
+              </button>
+            </div>
+
+            <div class="text-center">
+              <button type="submit" class="btn btn-primary">Save Rule</button>
+              <a href="{{ url_for('list_rules') }}" class="btn btn-secondary">Cancel</a>
+            </div>
+          </form>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let conditionIndex = 1;
+let actionIndex = 1;
+
+function addCondition() {
+  const html = `
+    <div class="condition-row mb-2">
+      <div class="row g-2">
+        <div class="col-md-3">
+          <select name="condition_field_${conditionIndex}" class="form-select" required>
+            <option value="from">From (Absender)</option>
+            <option value="subject">Subject (Betreff)</option>
+            <option value="body">Body (Nachricht)</option>
+            <option value="to">To (Empfänger)</option>
+            <option value="header">Header</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <select name="condition_operator_${conditionIndex}" class="form-select" required>
+            <option value="contains">contains (enthält)</option>
+            <option value="equals">equals (ist gleich)</option>
+            <option value="not_equals">not equals (ist nicht gleich)</option>
+            <option value="starts_with">starts with (beginnt mit)</option>
+            <option value="ends_with">ends with (endet mit)</option>
+            <option value="greater_than">greater than (>)</option>
+            <option value="less_than">less than (<)</option>
+            <option value="greater_equal">greater or equal (>=)</option>
+            <option value="less_equal">less or equal (<=)</option>
+            <option value="date_older_than">date older than (älter als X Tage)</option>
+          </select>
+        </div>
+        <div class="col-md-5">
+          <input type="text" name="condition_value_${conditionIndex}" class="form-control" placeholder="Value" required>
+        </div>
+        <div class="col-md-1">
+          <button type="button" class="btn btn-danger btn-sm" onclick="removeCondition(this)">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('conditions-container').insertAdjacentHTML('beforeend', html);
+  conditionIndex++;
+}
+
+function removeCondition(button) {
+  const container = document.getElementById('conditions-container');
+  if (container.children.length > 1) {
+    button.closest('.condition-row').remove();
+  } else {
+    alert('At least one condition is required.');
+  }
+}
+
+function addAction() {
+  const html = `
+    <div class="action-row mb-2">
+      <div class="row g-2">
+        <div class="col-md-3">
+          <select name="action_type_${actionIndex}" class="form-select action-type-select" required onchange="toggleActionFields(this)">
+            <option value="move_to_folder">Move to Folder</option>
+            <option value="copy_to_folder">Copy to Folder</option>
+            <option value="add_label">Add Label</option>
+            <option value="mark_as_read">Mark as Read</option>
+            <option value="delete">Delete</option>
+            <option value="modify_subject">Modify Subject</option>
+          </select>
+        </div>
+        <div class="col-md-8">
+          <input type="text" name="action_value_${actionIndex}" class="form-control action-value" placeholder="Folder/Label/Subject Pattern" required>
+        </div>
+        <div class="col-md-1">
+          <button type="button" class="btn btn-danger btn-sm" onclick="removeAction(this)">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('actions-container').insertAdjacentHTML('beforeend', html);
+  actionIndex++;
+}
+
+function removeAction(button) {
+  const container = document.getElementById('actions-container');
+  if (container.children.length > 1) {
+    button.closest('.action-row').remove();
+  } else {
+    alert('At least one action is required.');
+  }
+}
+
+function toggleActionFields(select) {
+  const row = select.closest('.action-row');
+  const valueInput = row.querySelector('.action-value');
+  const actionType = select.value;
+
+  if (actionType === 'mark_as_read' || actionType === 'delete') {
+    valueInput.style.display = 'none';
+    valueInput.removeAttribute('required');
+    valueInput.value = '';
+  } else {
+    valueInput.style.display = 'block';
+    valueInput.setAttribute('required', 'required');
+
+    // Update placeholder
+    if (actionType === 'move_to_folder' || actionType === 'copy_to_folder') {
+      valueInput.placeholder = 'Folder path (e.g., INBOX/Spam)';
+    } else if (actionType === 'add_label') {
+      valueInput.placeholder = 'Label name';
+    } else if (actionType === 'modify_subject') {
+      valueInput.placeholder = 'New subject pattern';
+    }
+  }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.action-type-select').forEach(select => {
+    toggleActionFields(select);
+  });
+});
+</script>
+{% endblock %}

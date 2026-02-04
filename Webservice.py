@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-from Entities import EmailCredential, init_db, create_session
+from Entities import EmailCredential, EmailRule, RuleCondition, RuleAction, init_db, create_session
 import os
 from dotenv import load_dotenv
 
@@ -114,6 +114,155 @@ def delete_account(id):
         session.close()
 
     return redirect(url_for('list_accounts'))
+
+
+# Email Rules Management
+@app.route('/rules')
+def list_rules():
+    session = create_session(engine)
+    try:
+        rules = session.query(EmailRule).all()
+        return render_template('rules/list.html', rules=rules)
+    finally:
+        session.close()
+
+
+@app.route('/rules/add', methods=['GET', 'POST'])
+def add_rule():
+    if request.method == 'POST':
+        session = create_session(engine)
+        try:
+            # Create EmailRule
+            rule = EmailRule(
+                name=request.form['name'],
+                enabled='enabled' in request.form,
+                condition=request.form.get('logic', 'AND'),
+                actions=''  # Not used, but required
+            )
+            session.add(rule)
+            session.flush()  # Get rule.id
+
+            # Parse and create conditions
+            condition_fields = [k for k in request.form.keys() if k.startswith('condition_field_')]
+            for field_key in condition_fields:
+                index = field_key.split('_')[-1]
+                condition = RuleCondition(
+                    rule_id=rule.id,
+                    field=request.form[f'condition_field_{index}'],
+                    operator=request.form[f'condition_operator_{index}'],
+                    value=request.form[f'condition_value_{index}']
+                )
+                session.add(condition)
+
+            # Parse and create actions
+            action_types = [k for k in request.form.keys() if k.startswith('action_type_')]
+            for type_key in action_types:
+                index = type_key.split('_')[-1]
+                action_type = request.form[f'action_type_{index}']
+                action_value = request.form.get(f'action_value_{index}', '')
+
+                action = RuleAction(
+                    rule_id=rule.id,
+                    action_type=action_type,
+                    action_value=action_value,
+                    folder=action_value if action_type in ['move_to_folder', 'copy_to_folder'] else None,
+                    label=action_value if action_type == 'add_label' else None
+                )
+                session.add(action)
+
+            session.commit()
+            flash('Email rule added successfully!', 'success')
+            return redirect(url_for('list_rules'))
+        except Exception as e:
+            session.rollback()
+            flash(f'Error adding rule: {str(e)}', 'danger')
+        finally:
+            session.close()
+
+    return render_template('rules/add.html')
+
+
+@app.route('/rules/edit/<int:id>', methods=['GET', 'POST'])
+def edit_rule(id):
+    session = create_session(engine)
+    try:
+        rule = session.query(EmailRule).filter_by(id=id).first()
+        if not rule:
+            flash('Rule not found!', 'danger')
+            return redirect(url_for('list_rules'))
+
+        if request.method == 'POST':
+            # Update rule basics
+            rule.name = request.form['name']
+            rule.enabled = 'enabled' in request.form
+            rule.condition = request.form.get('logic', 'AND')
+
+            # Delete existing conditions and actions
+            session.query(RuleCondition).filter_by(rule_id=rule.id).delete()
+            session.query(RuleAction).filter_by(rule_id=rule.id).delete()
+
+            # Parse and create new conditions
+            condition_fields = [k for k in request.form.keys() if k.startswith('condition_field_')]
+            for field_key in condition_fields:
+                index = field_key.split('_')[-1]
+                condition = RuleCondition(
+                    rule_id=rule.id,
+                    field=request.form[f'condition_field_{index}'],
+                    operator=request.form[f'condition_operator_{index}'],
+                    value=request.form[f'condition_value_{index}']
+                )
+                session.add(condition)
+
+            # Parse and create new actions
+            action_types = [k for k in request.form.keys() if k.startswith('action_type_')]
+            for type_key in action_types:
+                index = type_key.split('_')[-1]
+                action_type = request.form[f'action_type_{index}']
+                action_value = request.form.get(f'action_value_{index}', '')
+
+                action = RuleAction(
+                    rule_id=rule.id,
+                    action_type=action_type,
+                    action_value=action_value,
+                    folder=action_value if action_type in ['move_to_folder', 'copy_to_folder'] else None,
+                    label=action_value if action_type == 'add_label' else None
+                )
+                session.add(action)
+
+            session.commit()
+            flash('Email rule updated successfully!', 'success')
+            return redirect(url_for('list_rules'))
+
+        return render_template('rules/edit.html', rule=rule)
+    except Exception as e:
+        session.rollback()
+        flash(f'Error updating rule: {str(e)}', 'danger')
+        return redirect(url_for('list_rules'))
+    finally:
+        session.close()
+
+
+@app.route('/rules/delete/<int:id>', methods=['POST'])
+def delete_rule(id):
+    session = create_session(engine)
+    try:
+        rule = session.query(EmailRule).filter_by(id=id).first()
+        if rule:
+            # Delete related conditions and actions first (if not using cascade)
+            session.query(RuleCondition).filter_by(rule_id=id).delete()
+            session.query(RuleAction).filter_by(rule_id=id).delete()
+            session.delete(rule)
+            session.commit()
+            flash('Email rule deleted successfully!', 'success')
+        else:
+            flash('Rule not found!', 'danger')
+    except Exception as e:
+        session.rollback()
+        flash(f'Error deleting rule: {str(e)}', 'danger')
+    finally:
+        session.close()
+
+    return redirect(url_for('list_rules'))
 
 
 if __name__ == '__main__':

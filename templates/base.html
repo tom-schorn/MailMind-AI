@@ -56,6 +56,13 @@
         </a>
       </li><!-- End Email Accounts Nav -->
 
+      <li class="nav-item">
+        <a class="nav-link {% if not request.endpoint or 'rule' not in request.endpoint %}collapsed{% endif %}" href="{{ url_for('list_rules') }}">
+          <i class="bi bi-funnel"></i>
+          <span>Email Rules</span>
+        </a>
+      </li><!-- End Email Rules Nav -->
+
     </ul>
 
   </aside><!-- End Sidebar-->
