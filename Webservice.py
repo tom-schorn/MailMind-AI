@@ -12,7 +12,8 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Convert DATABASE_DEBUG to boolean
-database_debug = os.environ.get('DATABASE_DEBUG', 'False').lower() in ('true', '1', 'yes')
+database_debug_value = os.environ.get('DATABASE_DEBUG', 'false')
+database_debug = database_debug_value.lower() in ('true', '1', 'yes')
 engine = create_engine(os.environ.get('DATABASE_URL', 'sqlite:///storage.db'), echo=database_debug)
 init_db(engine)
 
@@ -37,14 +38,15 @@ def add_account():
     if request.method == 'POST':
         session = create_session(engine)
         try:
+            encryption = request.form.get('encryption', 'none')
             account = EmailCredential(
                 email_address=request.form['email_address'],
                 host=request.form['host'],
                 port=int(request.form['port']),
                 username=request.form['username'],
                 password=request.form['password'],
-                use_ssl='use_ssl' in request.form,
-                use_tls='use_tls' in request.form
+                use_ssl=encryption == 'ssl',
+                use_tls=encryption == 'tls'
             )
             session.add(account)
             session.commit()
@@ -69,6 +71,7 @@ def edit_account(id):
             return redirect(url_for('list_accounts'))
 
         if request.method == 'POST':
+            encryption = request.form.get('encryption', 'none')
             account.email_address = request.form['email_address']
             account.host = request.form['host']
             account.port = int(request.form['port'])
@@ -77,8 +80,8 @@ def edit_account(id):
             if request.form.get('password'):
                 account.password = request.form['password']
 
-            account.use_ssl = 'use_ssl' in request.form
-            account.use_tls = 'use_tls' in request.form
+            account.use_ssl = encryption == 'ssl'
+            account.use_tls = encryption == 'tls'
 
             session.commit()
             flash('Email account updated successfully!', 'success')
@@ -115,7 +118,7 @@ def delete_account(id):
 
 if __name__ == '__main__':
     # Convert FLASK_DEBUG to boolean
-    flask_debug = os.environ.get('FLASK_DEBUG', 'True').lower() in ('true', '1', 'yes')
+    flask_debug = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 'yes')
     flask_host = os.environ.get('FLASK_HOST', '0.0.0.0')
     flask_port = int(os.environ.get('FLASK_PORT', '5000'))
 

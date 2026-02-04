@@ -19,7 +19,7 @@ class EmailCredential(Base):
     password: Mapped[str] = mapped_column(String(255), nullable=False)
 
     created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
-    changed_at: Mapped[DateTime] = mapped_column(DateTime, onupdate=func.current_timestamp())
+    changed_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp(), onupdate=func.current_timestamp())
 
 
 class EmailRule(Base):
@@ -32,7 +32,7 @@ class EmailRule(Base):
     actions: Mapped[str] = mapped_column(Text, nullable=False)
 
     created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
-    changed_at: Mapped[DateTime] = mapped_column(DateTime, onupdate=func.current_timestamp())
+    changed_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp(), onupdate=func.current_timestamp())
 
 
 class RuleCondition(Base):

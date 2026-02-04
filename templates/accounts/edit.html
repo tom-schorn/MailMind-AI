@@ -41,19 +41,24 @@
               <input type="password" class="form-control" id="password" name="password" placeholder="Leave blank to keep current password">
               <div class="form-text">Current password is masked. Leave blank to keep unchanged.</div>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-12">
+              <label class="form-label">Encryption</label>
               <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="use_ssl" name="use_ssl" {% if account.use_ssl %}checked{% endif %}>
-                <label class="form-check-label" for="use_ssl">
-                  Use SSL (Port 993)
+                <input class="form-check-input" type="radio" name="encryption" id="encryption_ssl" value="ssl" {% if account.use_ssl %}checked{% endif %}>
+                <label class="form-check-label" for="encryption_ssl">
+                  SSL (Port 993)
                 </label>
               </div>
-            </div>
-            <div class="col-md-6">
               <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="use_tls" name="use_tls" {% if account.use_tls %}checked{% endif %}>
-                <label class="form-check-label" for="use_tls">
-                  Use TLS (Port 143)
+                <input class="form-check-input" type="radio" name="encryption" id="encryption_tls" value="tls" {% if account.use_tls %}checked{% endif %}>
+                <label class="form-check-label" for="encryption_tls">
+                  TLS/STARTTLS (Port 143)
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="encryption" id="encryption_none" value="none" {% if not account.use_ssl and not account.use_tls %}checked{% endif %}>
+                <label class="form-check-label" for="encryption_none">
+                  Unverschlüsselt (Port 143)
                 </label>
               </div>
             </div>
@@ -73,19 +78,16 @@
 
 {% block extra_js %}
 <script>
-  // Auto-update port based on SSL/TLS selection
-  document.getElementById('use_ssl').addEventListener('change', function() {
-    if (this.checked) {
-      document.getElementById('use_tls').checked = false;
-      document.getElementById('port').value = 993;
-    }
-  });
-
-  document.getElementById('use_tls').addEventListener('change', function() {
-    if (this.checked) {
-      document.getElementById('use_ssl').checked = false;
-      document.getElementById('port').value = 143;
-    }
+  // Auto-update port based on encryption selection
+  document.querySelectorAll('input[name="encryption"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      const portField = document.getElementById('port');
+      if (this.value === 'ssl') {
+        portField.value = 993;
+      } else if (this.value === 'tls' || this.value === 'none') {
+        portField.value = 143;
+      }
+    });
   });
 </script>
 {% endblock %}
