@@ -134,6 +134,7 @@ def add_rule():
         try:
             # Create EmailRule
             rule = EmailRule(
+                email_credential_id=int(request.form['email_account_id']),
                 name=request.form['name'],
                 enabled='enabled' in request.form,
                 condition=request.form.get('logic', 'AND'),
@@ -179,7 +180,13 @@ def add_rule():
         finally:
             session.close()
 
-    return render_template('rules/add.html')
+    # GET request - show form
+    session = create_session(engine)
+    try:
+        accounts = session.query(EmailCredential).all()
+        return render_template('rules/add.html', accounts=accounts)
+    finally:
+        session.close()
 
 
 @app.route('/rules/edit/<int:id>', methods=['GET', 'POST'])
@@ -193,6 +200,7 @@ def edit_rule(id):
 
         if request.method == 'POST':
             # Update rule basics
+            rule.email_credential_id = int(request.form['email_account_id'])
             rule.name = request.form['name']
             rule.enabled = 'enabled' in request.form
             rule.condition = request.form.get('logic', 'AND')
@@ -233,7 +241,9 @@ def edit_rule(id):
             flash('Email rule updated successfully!', 'success')
             return redirect(url_for('list_rules'))
 
-        return render_template('rules/edit.html', rule=rule)
+        # GET request - show form
+        accounts = session.query(EmailCredential).all()
+        return render_template('rules/edit.html', rule=rule, accounts=accounts)
     except Exception as e:
         session.rollback()
         flash(f'Error updating rule: {str(e)}', 'danger')

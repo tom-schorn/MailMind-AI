@@ -20,6 +20,16 @@
 
           <form class="row g-3" method="POST" action="{{ url_for('add_rule') }}">
             <!-- Basic Fields -->
+            <div class="col-md-12">
+              <label for="email_account_id" class="form-label">Email Account</label>
+              <select class="form-select" id="email_account_id" name="email_account_id" required>
+                <option value="">Select an email account...</option>
+                {% for account in accounts %}
+                <option value="{{ account.id }}">{{ account.email_address }} ({{ account.host }})</option>
+                {% endfor %}
+              </select>
+            </div>
+
             <div class="col-md-8">
               <label for="name" class="form-label">Rule Name</label>
               <input type="text" class="form-control" id="name" name="name" required>
@@ -60,25 +70,25 @@
                   <div class="row g-2">
                     <div class="col-md-3">
                       <select name="condition_field_0" class="form-select" required>
-                        <option value="from">From (Absender)</option>
-                        <option value="subject">Subject (Betreff)</option>
-                        <option value="body">Body (Nachricht)</option>
-                        <option value="to">To (Empfänger)</option>
+                        <option value="from">From</option>
+                        <option value="subject">Subject</option>
+                        <option value="body">Body</option>
+                        <option value="to">To</option>
                         <option value="header">Header</option>
                       </select>
                     </div>
                     <div class="col-md-3">
                       <select name="condition_operator_0" class="form-select" required>
-                        <option value="contains">contains (enthält)</option>
-                        <option value="equals">equals (ist gleich)</option>
-                        <option value="not_equals">not equals (ist nicht gleich)</option>
-                        <option value="starts_with">starts with (beginnt mit)</option>
-                        <option value="ends_with">ends with (endet mit)</option>
-                        <option value="greater_than">greater than (>)</option>
-                        <option value="less_than">less than (<)</option>
-                        <option value="greater_equal">greater or equal (>=)</option>
-                        <option value="less_equal">less or equal (<=)</option>
-                        <option value="date_older_than">date older than (älter als X Tage)</option>
+                        <option value="contains">contains</option>
+                        <option value="equals">equals</option>
+                        <option value="not_equals">not equals</option>
+                        <option value="starts_with">starts with</option>
+                        <option value="ends_with">ends with</option>
+                        <option value="greater_than">greater than</option>
+                        <option value="less_than">less than</option>
+                        <option value="greater_equal">greater or equal</option>
+                        <option value="less_equal">less or equal</option>
+                        <option value="date_older_than">date older than (days)</option>
                       </select>
                     </div>
                     <div class="col-md-5">
@@ -155,25 +165,25 @@ function addCondition() {
       <div class="row g-2">
         <div class="col-md-3">
           <select name="condition_field_${conditionIndex}" class="form-select" required>
-            <option value="from">From (Absender)</option>
-            <option value="subject">Subject (Betreff)</option>
-            <option value="body">Body (Nachricht)</option>
-            <option value="to">To (Empfänger)</option>
+            <option value="from">From</option>
+            <option value="subject">Subject</option>
+            <option value="body">Body</option>
+            <option value="to">To</option>
             <option value="header">Header</option>
           </select>
         </div>
         <div class="col-md-3">
           <select name="condition_operator_${conditionIndex}" class="form-select" required>
-            <option value="contains">contains (enthält)</option>
-            <option value="equals">equals (ist gleich)</option>
-            <option value="not_equals">not equals (ist nicht gleich)</option>
-            <option value="starts_with">starts with (beginnt mit)</option>
-            <option value="ends_with">ends with (endet mit)</option>
-            <option value="greater_than">greater than (>)</option>
-            <option value="less_than">less than (<)</option>
-            <option value="greater_equal">greater or equal (>=)</option>
-            <option value="less_equal">less or equal (<=)</option>
-            <option value="date_older_than">date older than (älter als X Tage)</option>
+            <option value="contains">contains</option>
+            <option value="equals">equals</option>
+            <option value="not_equals">not equals</option>
+            <option value="starts_with">starts with</option>
+            <option value="ends_with">ends with</option>
+            <option value="greater_than">greater than</option>
+            <option value="less_than">less than</option>
+            <option value="greater_equal">greater or equal</option>
+            <option value="less_equal">less or equal</option>
+            <option value="date_older_than">date older than (days)</option>
           </select>
         </div>
         <div class="col-md-5">

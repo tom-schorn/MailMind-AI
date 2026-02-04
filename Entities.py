@@ -21,11 +21,14 @@ class EmailCredential(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
     changed_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp(), onupdate=func.current_timestamp())
 
+    rules = relationship("EmailRule", back_populates="email_account", cascade="all, delete-orphan")
+
 
 class EmailRule(Base):
     __tablename__ = "emailrule"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email_credential_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailcredential.id'), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     condition: Mapped[str] = mapped_column(Text, nullable=False)
@@ -34,6 +37,7 @@ class EmailRule(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
     changed_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp(), onupdate=func.current_timestamp())
 
+    email_account = relationship("EmailCredential", back_populates="rules")
     conditions = relationship("RuleCondition", back_populates="rule", cascade="all, delete-orphan")
     rule_actions = relationship("RuleAction", back_populates="rule", cascade="all, delete-orphan")
 
