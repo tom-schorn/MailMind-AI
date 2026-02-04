@@ -144,11 +144,26 @@
             </div>
 
             <div class="text-center">
+              <button type="button" class="btn btn-info" onclick="testRule()">
+                <i class="bi bi-play-circle"></i> Test Rule (Dry-Run)
+              </button>
               <button type="submit" class="btn btn-primary">Update Rule</button>
               <a href="{{ url_for('list_rules') }}" class="btn btn-secondary">Cancel</a>
             </div>
           </form>
 
+        </div>
+      </div>
+
+      <!-- Test Results Section -->
+      <div class="card mt-3" id="test-results-card" style="display: none;">
+        <div class="card-body">
+          <h5 class="card-title">Test Results</h5>
+          <div id="test-status" class="alert alert-info" style="display: none;">
+            <i class="bi bi-hourglass-split"></i> Testing...
+          </div>
+          <div id="test-error" class="alert alert-danger" style="display: none;"></div>
+          <div id="test-results-content"></div>
         </div>
       </div>
 
@@ -280,5 +295,142 @@ document.addEventListener('DOMContentLoaded', function() {
     toggleActionFields(select);
   });
 });
+
+function testRule() {
+  const credentialId = document.getElementById('email_account_id').value;
+  if (!credentialId) {
+    alert('Please select an email account first.');
+    return;
+  }
+
+  const logic = document.querySelector('input[name="logic"]:checked').value;
+
+  const conditions = [];
+  document.querySelectorAll('.condition-row').forEach((row, index) => {
+    const field = row.querySelector(`select[name^="condition_field_"]`).value;
+    const operator = row.querySelector(`select[name^="condition_operator_"]`).value;
+    const value = row.querySelector(`input[name^="condition_value_"]`).value;
+    conditions.push({ field, operator, value });
+  });
+
+  const actions = [];
+  document.querySelectorAll('.action-row').forEach((row, index) => {
+    const actionType = row.querySelector(`select[name^="action_type_"]`).value;
+    const actionValue = row.querySelector(`input[name^="action_value_"]`).value || '';
+    actions.push({ action_type: actionType, action_value: actionValue });
+  });
+
+  document.getElementById('test-results-card').style.display = 'block';
+  document.getElementById('test-status').style.display = 'block';
+  document.getElementById('test-error').style.display = 'none';
+  document.getElementById('test-results-content').innerHTML = '';
+
+  fetch('/rules/test-preview', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      credential_id: parseInt(credentialId),
+      logic: logic,
+      conditions: conditions,
+      actions: actions,
+      max_emails: 10
+    })
+  })
+  .then(response => response.json())
+  .then(data => {
+    document.getElementById('test-status').style.display = 'none';
+
+    if (data.error) {
+      document.getElementById('test-error').style.display = 'block';
+      document.getElementById('test-error').textContent = 'Error: ' + data.error;
+      return;
+    }
+
+    const results = data.results;
+    let html = `
+      <p><strong>Emails Tested:</strong> ${results.length}</p>
+      <table class="table table-striped">
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>From</th>
+            <th>Date</th>
+            <th>Match</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    results.forEach((result, index) => {
+      html += `
+        <tr>
+          <td>${result.email_subject.substring(0, 50)}${result.email_subject.length > 50 ? '...' : ''}</td>
+          <td>${result.email_from}</td>
+          <td>${result.email_date}</td>
+          <td>
+            ${result.matched ?
+              '<span class="badge bg-success">Matched</span>' :
+              '<span class="badge bg-secondary">Not Matched</span>'}
+          </td>
+          <td>
+            <button class="btn btn-sm btn-info" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#details-${index}">
+              <i class="bi bi-eye"></i> View
+            </button>
+          </td>
+        </tr>
+        <tr class="collapse" id="details-${index}">
+          <td colspan="5">
+            <div class="card card-body">
+              <h6>Condition Results:</h6>
+      `;
+
+      result.condition_results.forEach(cond => {
+        html += `
+          <div class="mb-2">
+            <strong>${cond.field}</strong> ${cond.operator} "${cond.value}":
+            ${cond.matched ?
+              '<span class="badge bg-success">Matched</span>' :
+              '<span class="badge bg-secondary">Not Matched</span>'}
+            <br>
+            <small class="text-muted">${cond.reason}</small>
+          </div>
+        `;
+      });
+
+      if (result.matched && result.actions_would_apply.length > 0) {
+        html += `
+          <h6 class="mt-3">Actions that would be applied:</h6>
+          <ul>
+        `;
+        result.actions_would_apply.forEach(action => {
+          html += `<li>${action}</li>`;
+        });
+        html += `</ul>`;
+      }
+
+      html += `
+            </div>
+          </td>
+        </tr>
+      `;
+    });
+
+    html += `
+        </tbody>
+      </table>
+    `;
+
+    document.getElementById('test-results-content').innerHTML = html;
+  })
+  .catch(error => {
+    document.getElementById('test-status').style.display = 'none';
+    document.getElementById('test-error').style.display = 'block';
+    document.getElementById('test-error').textContent = 'Error: ' + error.message;
+  });
+}
 </script>
 {% endblock %}

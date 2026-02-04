@@ -457,6 +457,101 @@ def service_status():
         session.close()
 
 
+@app.route('/rules/test-preview', methods=['POST'])
+def test_rule_preview():
+    """Test rule preview without saving."""
+    from imap_client import IMAPClient, EmailMessage
+    from rule_engine import RuleEngine, ConditionEvaluator
+    from logger_config import setup_logging
+    from datetime import datetime
+
+    try:
+        data = request.get_json()
+        credential_id = data.get('credential_id')
+        logic = data.get('logic', 'AND')
+        conditions = data.get('conditions', [])
+        actions = data.get('actions', [])
+        max_emails = data.get('max_emails', 10)
+
+        session = create_session(engine)
+
+        try:
+            credential = session.query(EmailCredential).filter_by(id=credential_id).first()
+            if not credential:
+                return jsonify({'error': 'Credential not found'}), 404
+
+            config = load_config()
+            logger = setup_logging(config)
+
+            imap_client = IMAPClient(credential, config, logger)
+            imap_client.connect()
+
+            try:
+                uids = imap_client.get_all_uids(limit=max_emails)
+                evaluator = ConditionEvaluator(logger)
+                results = []
+
+                for uid in uids:
+                    email = imap_client.fetch_email(uid)
+
+                    condition_results = []
+                    for cond in conditions:
+                        cond_obj = type('Condition', (), cond)()
+                        matched, reason = evaluator.evaluate(email, cond_obj)
+                        condition_results.append({
+                            'field': cond['field'],
+                            'operator': cond['operator'],
+                            'value': cond['value'],
+                            'matched': matched,
+                            'reason': reason
+                        })
+
+                    if logic == 'AND':
+                        overall_match = all(c['matched'] for c in condition_results)
+                    else:
+                        overall_match = any(c['matched'] for c in condition_results)
+
+                    actions_would_apply = []
+                    if overall_match:
+                        for action in actions:
+                            action_type = action.get('action_type')
+                            action_value = action.get('action_value', '')
+
+                            if action_type == 'move_to_folder':
+                                actions_would_apply.append(f"move_to_folder: {action_value}")
+                            elif action_type == 'copy_to_folder':
+                                actions_would_apply.append(f"copy_to_folder: {action_value}")
+                            elif action_type == 'add_label':
+                                actions_would_apply.append(f"add_label: {action_value}")
+                            elif action_type == 'mark_as_read':
+                                actions_would_apply.append("mark_as_read")
+                            elif action_type == 'delete':
+                                actions_would_apply.append("delete")
+                            elif action_type == 'modify_subject':
+                                actions_would_apply.append(f"modify_subject: {action_value}")
+
+                    results.append({
+                        'email_uid': uid,
+                        'email_subject': email.subject,
+                        'email_from': email.sender,
+                        'email_date': email.date.strftime('%Y-%m-%d %H:%M') if email.date else 'N/A',
+                        'matched': overall_match,
+                        'condition_results': condition_results,
+                        'actions_would_apply': actions_would_apply
+                    })
+
+                return jsonify({'status': 'success', 'results': results})
+
+            finally:
+                imap_client.disconnect()
+
+        finally:
+            session.close()
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     # Convert FLASK_DEBUG to boolean
     flask_debug = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 'yes')
