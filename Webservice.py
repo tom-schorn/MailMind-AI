@@ -458,6 +458,28 @@ def dry_run_status(request_id):
         session.close()
 
 
+@app.route('/rules/test-logs/<session_id>')
+def get_test_logs(session_id):
+    """Get logs for a test session."""
+    from test_session import get_session_manager
+
+    after_index = int(request.args.get('after', 0))
+
+    session_mgr = get_session_manager()
+    test_session = session_mgr.get_session(session_id)
+
+    if not test_session:
+        return jsonify({'error': 'Session not found'}), 404
+
+    logs = test_session.get_logs(after_index)
+
+    return jsonify({
+        'status': test_session.status,
+        'logs': logs,
+        'total_logs': len(test_session.logs)
+    })
+
+
 @app.route('/service/status')
 def service_status():
     """Display service status page."""
@@ -479,6 +501,8 @@ def test_rule_preview():
     from rule_engine import RuleEngine, ConditionEvaluator
     from logger_config import setup_logging
     from datetime import datetime
+    from test_session import get_session_manager
+    import uuid
 
     try:
         data = request.get_json()
@@ -487,6 +511,10 @@ def test_rule_preview():
         conditions = data.get('conditions', [])
         actions = data.get('actions', [])
         max_emails = data.get('max_emails', 10)
+
+        session_id = str(uuid.uuid4())
+        session_mgr = get_session_manager()
+        test_session = session_mgr.create_session(session_id)
 
         session = create_session(engine)
 
@@ -502,9 +530,13 @@ def test_rule_preview():
             imap_client.connect()
 
             try:
+                test_session.add_log('INFO', 'Starting dry-run test...')
                 logger.info("Starting dry-run test")
+
+                test_session.add_log('INFO', 'Fetching emails from inbox...')
                 uids = imap_client.get_all_uids(limit=100)
                 logger.info(f"Found {len(uids)} total emails in inbox")
+                test_session.add_log('INFO', f'Found {len(uids)} emails in inbox')
 
                 evaluator = ConditionEvaluator(logger)
                 results = []
@@ -524,9 +556,11 @@ def test_rule_preview():
 
                     emails_checked += 1
                     logger.info(f"Checking email {emails_checked}/{min(len(uids), max_emails_to_check)}: UID {uid}")
+                    test_session.add_log('INFO', f'Checking email {emails_checked}/{min(len(uids), max_emails_to_check)}')
 
                     email = imap_client.fetch_email(uid)
                     logger.debug(f"Email subject: {email.subject[:50]}")
+                    test_session.add_log('DEBUG', f'Subject: {email.subject[:80]}')
 
                     condition_results = []
                     for cond in conditions:
@@ -550,6 +584,7 @@ def test_rule_preview():
                     if overall_match:
                         matched_count += 1
                         logger.info(f"Match found! ({matched_count}/{max_matches}): {email.subject[:50]}")
+                        test_session.add_log('SUCCESS', f'✓ MATCH {matched_count}/{max_matches}: {email.subject[:60]}')
 
                         actions_would_apply = []
                         for action in actions:
@@ -580,9 +615,12 @@ def test_rule_preview():
                         })
 
                 logger.info(f"Dry-run complete: {matched_count} matches from {emails_checked} emails checked")
+                test_session.add_log('INFO', f'Test complete: {matched_count} matches from {emails_checked} emails')
+                test_session.set_status('completed')
 
                 return jsonify({
                     'status': 'success',
+                    'session_id': session_id,
                     'results': results,
                     'emails_checked': emails_checked,
                     'total_emails': min(len(uids), max_emails_to_check),

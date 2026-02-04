@@ -152,6 +152,30 @@
         </div>
       </div>
 
+      <!-- Test Log Modal -->
+      <div class="modal fade" id="testLogModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Test Progress</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-2">
+                <strong>Status:</strong> <span id="modal-status">Testing...</span>
+                <span id="modal-timer" class="text-muted ms-2">(0s)</span>
+              </div>
+              <div class="mb-2">
+                <strong>Progress:</strong> <span id="modal-progress">0 emails checked</span>
+              </div>
+              <div style="max-height: 400px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px;">
+                <div id="log-output"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Test Results Section -->
       <div class="card mt-3" id="test-results-card" style="display: none;">
         <div class="card-body">
@@ -318,16 +342,49 @@ function testRule() {
     actions.push({ action_type: actionType, action_value: actionValue });
   });
 
-  document.getElementById('test-results-card').style.display = 'block';
-  document.getElementById('test-status').style.display = 'block';
-  document.getElementById('test-error').style.display = 'none';
-  document.getElementById('test-results-content').innerHTML = '';
+  // Show modal
+  const modal = new bootstrap.Modal(document.getElementById('testLogModal'));
+  modal.show();
+  document.getElementById('log-output').innerHTML = '<div>Initializing test...</div>';
+  document.getElementById('modal-status').textContent = 'Testing...';
+  document.getElementById('modal-progress').textContent = '0 emails checked';
 
   const startTime = Date.now();
-  const progressInterval = setInterval(() => {
+  const timerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
-    document.getElementById('test-progress').textContent = `Testing... (${elapsed}s elapsed)`;
+    document.getElementById('modal-timer').textContent = `(${elapsed}s)`;
   }, 1000);
+
+  let sessionId = null;
+  let logIndex = 0;
+  let logPollInterval = null;
+
+  function pollLogs() {
+    if (!sessionId) return;
+
+    fetch(`/rules/test-logs/${sessionId}?after=${logIndex}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.logs && data.logs.length > 0) {
+          const logOutput = document.getElementById('log-output');
+          data.logs.forEach(log => {
+            const levelClass = log.level === 'SUCCESS' ? 'text-success' :
+                              log.level === 'ERROR' ? 'text-danger' : '';
+            logOutput.innerHTML += `<div class="${levelClass}">[${log.timestamp.split('T')[1].split('.')[0]}] ${log.message}</div>`;
+          });
+          logIndex = data.total_logs;
+          logOutput.scrollTop = logOutput.scrollHeight;
+
+          document.getElementById('modal-progress').textContent =
+            data.logs[data.logs.length - 1].message.includes('Checking email') ?
+            data.logs[data.logs.length - 1].message : document.getElementById('modal-progress').textContent;
+        }
+
+        if (data.status === 'completed' && logPollInterval) {
+          clearInterval(logPollInterval);
+        }
+      });
+  }
 
   fetch('/rules/test-preview', {
     method: 'POST',
@@ -344,14 +401,22 @@ function testRule() {
   })
   .then(response => response.json())
   .then(data => {
-    clearInterval(progressInterval);
-    document.getElementById('test-status').style.display = 'none';
+    clearInterval(timerInterval);
+    if (logPollInterval) clearInterval(logPollInterval);
+
+    sessionId = data.session_id;
+    if (sessionId) {
+      logPollInterval = setInterval(pollLogs, 500);
+    }
 
     if (data.error) {
-      document.getElementById('test-error').style.display = 'block';
-      document.getElementById('test-error').textContent = 'Error: ' + data.error;
+      document.getElementById('modal-status').textContent = 'Error!';
+      document.getElementById('log-output').innerHTML += '<div class="text-danger">Error: ' + data.error + '</div>';
       return;
     }
+
+    document.getElementById('modal-status').textContent = 'Complete!';
+    document.getElementById('test-results-card').style.display = 'block';
 
     const results = data.results;
     const emailsChecked = data.emails_checked || 'N/A';
@@ -441,10 +506,10 @@ function testRule() {
     document.getElementById('test-results-content').innerHTML = html;
   })
   .catch(error => {
-    clearInterval(progressInterval);
-    document.getElementById('test-status').style.display = 'none';
-    document.getElementById('test-error').style.display = 'block';
-    document.getElementById('test-error').textContent = 'Error: ' + error.message;
+    clearInterval(timerInterval);
+    if (logPollInterval) clearInterval(logPollInterval);
+    document.getElementById('modal-status').textContent = 'Error!';
+    document.getElementById('log-output').innerHTML += '<div class="text-danger">Error: ' + error.message + '</div>';
   });
 }
 </script>
