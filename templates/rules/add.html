@@ -356,10 +356,13 @@ function testRule() {
     const results = data.results;
     const emailsChecked = data.emails_checked || 'N/A';
     const totalEmails = data.total_emails || 'N/A';
+    const inboxTotal = data.inbox_total || 'N/A';
 
     let html = `
-      <p><strong>Matching Emails:</strong> ${results.length} / 10 max</p>
-      <p><strong>Emails Checked:</strong> ${emailsChecked} / ${totalEmails} total</p>
+      <div class="alert alert-info">
+        <strong>Matching Emails:</strong> ${results.length} / 10 max<br>
+        <strong>Emails Checked:</strong> ${emailsChecked} / ${totalEmails} (Inbox total: ${inboxTotal})
+      </div>
       <table class="table table-striped">
         <thead>
           <tr>

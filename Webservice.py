@@ -503,13 +503,14 @@ def test_rule_preview():
 
             try:
                 logger.info("Starting dry-run test")
-                uids = imap_client.get_all_uids(limit=0)
+                uids = imap_client.get_all_uids(limit=100)
                 logger.info(f"Found {len(uids)} total emails in inbox")
 
                 evaluator = ConditionEvaluator(logger)
                 results = []
                 matched_count = 0
                 max_matches = 10
+                max_emails_to_check = 100
                 emails_checked = 0
 
                 for uid in uids:
@@ -517,8 +518,12 @@ def test_rule_preview():
                         logger.info(f"Reached max matches ({max_matches}), stopping")
                         break
 
+                    if emails_checked >= max_emails_to_check:
+                        logger.info(f"Reached max emails to check ({max_emails_to_check}), stopping")
+                        break
+
                     emails_checked += 1
-                    logger.debug(f"Checking email {emails_checked}/{len(uids)}: UID {uid}")
+                    logger.info(f"Checking email {emails_checked}/{min(len(uids), max_emails_to_check)}: UID {uid}")
 
                     email = imap_client.fetch_email(uid)
                     logger.debug(f"Email subject: {email.subject[:50]}")
@@ -575,11 +580,13 @@ def test_rule_preview():
                         })
 
                 logger.info(f"Dry-run complete: {matched_count} matches from {emails_checked} emails checked")
+
                 return jsonify({
                     'status': 'success',
                     'results': results,
                     'emails_checked': emails_checked,
-                    'total_emails': len(uids)
+                    'total_emails': min(len(uids), max_emails_to_check),
+                    'inbox_total': len(uids)
                 })
 
             finally:

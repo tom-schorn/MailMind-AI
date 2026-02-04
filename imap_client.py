@@ -91,7 +91,9 @@ class IMAPClient:
             raise ConnectionError("Not connected to IMAP server")
 
         try:
-            for msg in self.mailbox.fetch(AND(uid=uid)):
+            self.logger.debug(f"Fetching email UID {uid}")
+            for msg in self.mailbox.fetch(AND(uid=uid), mark_seen=False):
+                self.logger.debug(f"Parsing email: {msg.subject[:50] if msg.subject else 'No subject'}")
                 headers = {k: v for k, v in msg.headers.items()}
 
                 return EmailMessage(
