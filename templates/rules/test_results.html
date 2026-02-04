@@ -30,7 +30,8 @@
                 <span class="badge bg-danger" id="status-badge">Failed</span>
               {% endif %}
             </p>
-            <p><strong>Emails Tested:</strong> <span id="result-count">{{ results|length }}</span></p>
+            <p><strong>Emails Tested:</strong> {{ dry_run_request.max_emails }}</p>
+            <p><strong>Matching Emails:</strong> <span id="result-count">{{ results|selectattr('matched')|list|length }}</span></p>
             {% if dry_run_request.processed_at %}
             <p><strong>Completed At:</strong> {{ dry_run_request.processed_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
             {% endif %}
@@ -55,16 +56,13 @@
             </thead>
             <tbody id="results-table">
               {% for result in results %}
+              {% if result.matched %}
               <tr>
                 <td>{{ result.email_subject[:50] }}{% if result.email_subject|length > 50 %}...{% endif %}</td>
                 <td>{{ result.email_from }}</td>
                 <td>{{ result.email_date.strftime('%Y-%m-%d %H:%M') if result.email_date else 'N/A' }}</td>
                 <td>
-                  {% if result.matched %}
-                    <span class="badge bg-success">Matched</span>
-                  {% else %}
-                    <span class="badge bg-secondary">Not Matched</span>
-                  {% endif %}
+                  <span class="badge bg-success">Matched</span>
                 </td>
                 <td>
                   <button class="btn btn-sm btn-info" type="button" data-bs-toggle="collapse"
@@ -103,9 +101,10 @@
                   </div>
                 </td>
               </tr>
+              {% endif %}
               {% else %}
               <tr id="no-results">
-                <td colspan="5" class="text-center">No results yet. Processing...</td>
+                <td colspan="5" class="text-center">No matching emails found.</td>
               </tr>
               {% endfor %}
             </tbody>

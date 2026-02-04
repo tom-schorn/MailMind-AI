@@ -347,32 +347,37 @@ function testRule() {
     }
 
     const results = data.results;
+    const matchedResults = results.filter(r => r.matched);
+
     let html = `
       <p><strong>Emails Tested:</strong> ${results.length}</p>
+      <p><strong>Matching Emails:</strong> ${matchedResults.length}</p>
       <table class="table table-striped">
         <thead>
           <tr>
             <th>Subject</th>
             <th>From</th>
             <th>Date</th>
-            <th>Match</th>
             <th>Details</th>
           </tr>
         </thead>
         <tbody>
     `;
 
-    results.forEach((result, index) => {
+    if (matchedResults.length === 0) {
+      html += `
+        <tr>
+          <td colspan="4" class="text-center">No matching emails found.</td>
+        </tr>
+      `;
+    }
+
+    matchedResults.forEach((result, index) => {
       html += `
         <tr>
           <td>${result.email_subject.substring(0, 50)}${result.email_subject.length > 50 ? '...' : ''}</td>
           <td>${result.email_from}</td>
           <td>${result.email_date}</td>
-          <td>
-            ${result.matched ?
-              '<span class="badge bg-success">Matched</span>' :
-              '<span class="badge bg-secondary">Not Matched</span>'}
-          </td>
           <td>
             <button class="btn btn-sm btn-info" type="button" data-bs-toggle="collapse"
                     data-bs-target="#details-${index}">
@@ -381,7 +386,7 @@ function testRule() {
           </td>
         </tr>
         <tr class="collapse" id="details-${index}">
-          <td colspan="5">
+          <td colspan="4">
             <div class="card card-body">
               <h6>Condition Results:</h6>
       `;
