@@ -8,9 +8,11 @@ import json
 from dotenv import load_dotenv
 from config_manager import load_config, save_config
 from env_manager import load_env_settings, save_env_settings, validate_env_value
+from path_manager import get_env_file, get_database_url
 
 # Load environment variables from .env file
-load_dotenv()
+env_file = get_env_file()
+load_dotenv(env_file)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -18,7 +20,7 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-pr
 # Convert DATABASE_DEBUG to boolean
 database_debug_value = os.environ.get('DATABASE_DEBUG', 'false')
 database_debug = database_debug_value.lower() in ('true', '1', 'yes')
-engine = create_engine(os.environ.get('DATABASE_URL', 'sqlite:///storage.db'), echo=database_debug)
+engine = create_engine(get_database_url(), echo=database_debug)
 init_db(engine)
 
 

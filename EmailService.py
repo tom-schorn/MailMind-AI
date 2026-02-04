@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker, Session
 
 from config_manager import load_config
 from logger_config import setup_logging
+from path_manager import get_database_url
 from Entities import EmailCredential, init_db
 from imap_client import IMAPClient
 from rule_engine import RuleEngine
@@ -24,7 +25,8 @@ class EmailService:
         self.config = load_config()
         self.logger = setup_logging(self.config)
 
-        self.engine = create_engine("sqlite:///storage.db")
+        db_url = get_database_url()
+        self.engine = create_engine(db_url)
         init_db(self.engine)
 
         self.session_factory = sessionmaker(bind=self.engine)

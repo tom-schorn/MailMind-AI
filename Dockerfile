@@ -21,11 +21,18 @@ COPY --from=builder /root/.local /home/mailmind/.local
 # Copy application files
 COPY --chown=mailmind:mailmind . .
 
+# Create data directory for persistent files
+RUN mkdir -p /app/data && chown -R mailmind:mailmind /app/data
+
 # Environment variables
 ENV PATH=/home/mailmind/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     FLASK_HOST=0.0.0.0 \
-    FLASK_PORT=5000
+    FLASK_PORT=5000 \
+    DATA_DIR=/app/data
+
+# Volume for persistent data (.env, storage.db, config.json, logs)
+VOLUME /app/data
 
 # Expose port
 EXPOSE 5000

@@ -1,30 +1,63 @@
 import os
-from dotenv import load_dotenv, set_key, find_dotenv
+from dotenv import load_dotenv, set_key
+from path_manager import get_env_file, get_database_url, ensure_data_dir
 
 def load_env_settings():
     """Load current .env settings."""
-    load_dotenv()
+    ensure_data_dir()
+    env_file = get_env_file()
+    load_dotenv(env_file)
     return {
         'FLASK_SECRET_KEY': os.getenv('FLASK_SECRET_KEY', ''),
         'FLASK_DEBUG': os.getenv('FLASK_DEBUG', 'False'),
         'FLASK_HOST': os.getenv('FLASK_HOST', '0.0.0.0'),
         'FLASK_PORT': os.getenv('FLASK_PORT', '5000'),
-        'DATABASE_URL': os.getenv('DATABASE_URL', 'sqlite:///storage.db'),
+        'DATABASE_URL': os.getenv('DATABASE_URL', get_database_url()),
         'DATABASE_DEBUG': os.getenv('DATABASE_DEBUG', 'False')
     }
 
 def save_env_settings(data):
     """Save settings to .env file."""
-    env_file = find_dotenv()
-    if not env_file:
-        env_file = '.env'
-        # Create .env file if it doesn't exist
-        if not os.path.exists(env_file):
-            with open(env_file, 'w') as f:
-                f.write('# Flask Configuration\n')
+    ensure_data_dir()
+    env_file = get_env_file()
+
+    # Create .env file if it doesn't exist
+    if not os.path.exists(env_file):
+        with open(env_file, 'w') as f:
+            f.write('# Flask Configuration\n')
 
     for key, value in data.items():
         set_key(env_file, key, str(value))
+
+def sync_env_from_system():
+    """Sync system environment variables into .env file.
+
+    This allows Docker environment variables to override .env settings.
+    Only updates keys that are explicitly set in system environment.
+    """
+    ensure_data_dir()
+    env_file = get_env_file()
+
+    # Create .env if it doesn't exist
+    if not os.path.exists(env_file):
+        with open(env_file, 'w') as f:
+            f.write('# Flask Configuration\n')
+
+    # Keys that can be overridden from system env
+    env_keys = [
+        'FLASK_SECRET_KEY',
+        'FLASK_DEBUG',
+        'FLASK_HOST',
+        'FLASK_PORT',
+        'DATABASE_URL',
+        'DATABASE_DEBUG'
+    ]
+
+    # Only write to .env if the env var is explicitly set in system
+    for key in env_keys:
+        value = os.environ.get(key)
+        if value is not None:  # Only if explicitly set
+            set_key(env_file, key, str(value))
 
 def validate_env_value(key, value):
     """Validate environment variable values."""
