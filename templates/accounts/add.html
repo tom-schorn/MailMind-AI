@@ -43,7 +43,13 @@
             <div class="col-md-12">
               <label class="form-label">Encryption</label>
               <div class="form-check">
-                <input class="form-check-input" type="radio" name="encryption" id="encryption_ssl" value="ssl" checked>
+                <input class="form-check-input" type="radio" name="encryption" id="encryption_auto" value="auto" checked>
+                <label class="form-check-label" for="encryption_auto">
+                  <strong>Auto-detect (recommended)</strong>
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="encryption" id="encryption_ssl" value="ssl">
                 <label class="form-check-label" for="encryption_ssl">
                   SSL (Port 993)
                 </label>
@@ -57,7 +63,7 @@
               <div class="form-check">
                 <input class="form-check-input" type="radio" name="encryption" id="encryption_none" value="none">
                 <label class="form-check-label" for="encryption_none">
-                  Unverschlüsselt (Port 143)
+                  Unencrypted (Port 143)
                 </label>
               </div>
             </div>

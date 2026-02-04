@@ -42,7 +42,8 @@ def add_account():
     if request.method == 'POST':
         session = create_session(engine)
         try:
-            encryption = request.form.get('encryption', 'none')
+            encryption = request.form.get('encryption', 'auto')
+
             account = EmailCredential(
                 email_address=request.form['email_address'],
                 host=request.form['host'],
@@ -52,6 +53,20 @@ def add_account():
                 use_ssl=encryption == 'ssl',
                 use_tls=encryption == 'tls'
             )
+
+            if encryption == 'auto':
+                from imap_test_connection import test_imap_connection
+                success, message, settings = test_imap_connection(account)
+
+                if success and settings:
+                    account.use_ssl = settings['use_ssl']
+                    account.use_tls = settings['use_tls']
+                    flash(f'Connection test successful! Using {message}', 'success')
+                else:
+                    flash(f'Connection test failed: {message}', 'danger')
+                    session.close()
+                    return render_template('accounts/add.html')
+
             session.add(account)
             session.commit()
             flash('Email account added successfully!', 'success')
