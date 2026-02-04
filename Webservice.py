@@ -502,17 +502,26 @@ def test_rule_preview():
             imap_client.connect()
 
             try:
+                logger.info("Starting dry-run test")
                 uids = imap_client.get_all_uids(limit=0)
+                logger.info(f"Found {len(uids)} total emails in inbox")
+
                 evaluator = ConditionEvaluator(logger)
                 results = []
                 matched_count = 0
                 max_matches = 10
+                emails_checked = 0
 
                 for uid in uids:
                     if matched_count >= max_matches:
+                        logger.info(f"Reached max matches ({max_matches}), stopping")
                         break
 
+                    emails_checked += 1
+                    logger.debug(f"Checking email {emails_checked}/{len(uids)}: UID {uid}")
+
                     email = imap_client.fetch_email(uid)
+                    logger.debug(f"Email subject: {email.subject[:50]}")
 
                     condition_results = []
                     for cond in conditions:
@@ -531,8 +540,12 @@ def test_rule_preview():
                     else:
                         overall_match = any(c['matched'] for c in condition_results)
 
+                    logger.debug(f"Email {uid}: Match={overall_match}")
+
                     if overall_match:
                         matched_count += 1
+                        logger.info(f"Match found! ({matched_count}/{max_matches}): {email.subject[:50]}")
+
                         actions_would_apply = []
                         for action in actions:
                             action_type = action.get('action_type')
@@ -561,7 +574,13 @@ def test_rule_preview():
                             'actions_would_apply': actions_would_apply
                         })
 
-                return jsonify({'status': 'success', 'results': results})
+                logger.info(f"Dry-run complete: {matched_count} matches from {emails_checked} emails checked")
+                return jsonify({
+                    'status': 'success',
+                    'results': results,
+                    'emails_checked': emails_checked,
+                    'total_emails': len(uids)
+                })
 
             finally:
                 imap_client.disconnect()

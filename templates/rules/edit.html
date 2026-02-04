@@ -325,6 +325,12 @@ function testRule() {
   document.getElementById('test-error').style.display = 'none';
   document.getElementById('test-results-content').innerHTML = '';
 
+  const startTime = Date.now();
+  const progressInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    document.getElementById('test-progress').textContent = `Testing... (${elapsed}s elapsed)`;
+  }, 1000);
+
   fetch('/rules/test-preview', {
     method: 'POST',
     headers: {
@@ -340,6 +346,7 @@ function testRule() {
   })
   .then(response => response.json())
   .then(data => {
+    clearInterval(progressInterval);
     document.getElementById('test-status').style.display = 'none';
 
     if (data.error) {
@@ -349,11 +356,12 @@ function testRule() {
     }
 
     const results = data.results;
-    const matchedResults = results.filter(r => r.matched);
+    const emailsChecked = data.emails_checked || 'N/A';
+    const totalEmails = data.total_emails || 'N/A';
 
     let html = `
-      <p><strong>Emails Tested:</strong> ${results.length}</p>
-      <p><strong>Matching Emails:</strong> ${matchedResults.length}</p>
+      <p><strong>Matching Emails:</strong> ${results.length} / 10 max</p>
+      <p><strong>Emails Checked:</strong> ${emailsChecked} / ${totalEmails} total</p>
       <table class="table table-striped">
         <thead>
           <tr>
@@ -366,7 +374,7 @@ function testRule() {
         <tbody>
     `;
 
-    if (matchedResults.length === 0) {
+    if (results.length === 0) {
       html += `
         <tr>
           <td colspan="4" class="text-center">No matching emails found.</td>
@@ -374,7 +382,7 @@ function testRule() {
       `;
     }
 
-    matchedResults.forEach((result, index) => {
+    results.forEach((result, index) => {
       html += `
         <tr>
           <td>${result.email_subject.substring(0, 50)}${result.email_subject.length > 50 ? '...' : ''}</td>
@@ -432,6 +440,7 @@ function testRule() {
     document.getElementById('test-results-content').innerHTML = html;
   })
   .catch(error => {
+    clearInterval(progressInterval);
     document.getElementById('test-status').style.display = 'none';
     document.getElementById('test-error').style.display = 'block';
     document.getElementById('test-error').textContent = 'Error: ' + error.message;
