@@ -3,11 +3,17 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from Entities import EmailCredential, init_db, create_session
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 
-engine = create_engine("sqlite:///storage.db", echo=True)
+# Convert DATABASE_DEBUG to boolean
+database_debug = os.environ.get('DATABASE_DEBUG', 'False').lower() in ('true', '1', 'yes')
+engine = create_engine(os.environ.get('DATABASE_URL', 'sqlite:///storage.db'), echo=database_debug)
 init_db(engine)
 
 
@@ -108,4 +114,13 @@ def delete_account(id):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Convert FLASK_DEBUG to boolean
+    flask_debug = os.environ.get('FLASK_DEBUG', 'True').lower() in ('true', '1', 'yes')
+    flask_host = os.environ.get('FLASK_HOST', '0.0.0.0')
+    flask_port = int(os.environ.get('FLASK_PORT', '5000'))
+
+    app.run(
+        debug=flask_debug,
+        host=flask_host,
+        port=flask_port
+    )
