@@ -48,6 +48,7 @@ logs/
 # MailMind state
 mailmind_state.json
 mailmind_lists.json
+config.json
 
 # Claude Code
 .claude/

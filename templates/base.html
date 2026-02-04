@@ -63,6 +63,13 @@
         </a>
       </li><!-- End Email Rules Nav -->
 
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint != 'settings' %}collapsed{% endif %}" href="{{ url_for('settings') }}">
+          <i class="bi bi-gear"></i>
+          <span>Settings</span>
+        </a>
+      </li><!-- End Settings Nav -->
+
     </ul>
 
   </aside><!-- End Sidebar-->

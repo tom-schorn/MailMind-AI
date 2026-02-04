@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from Entities import EmailCredential, EmailRule, RuleCondition, RuleAction, init_db, create_session
 import os
 from dotenv import load_dotenv
+from config_manager import load_config, save_config
+from env_manager import load_env_settings, save_env_settings, validate_env_value
 
 # Load environment variables from .env file
 load_dotenv()
@@ -273,6 +275,75 @@ def delete_rule(id):
         session.close()
 
     return redirect(url_for('list_rules'))
+
+
+@app.route('/settings', methods=['GET', 'POST'])
+def settings():
+    if request.method == 'POST':
+        try:
+            # Validate and save .env settings
+            env_data = {
+                'FLASK_SECRET_KEY': request.form['FLASK_SECRET_KEY'],
+                'FLASK_DEBUG': 'True' if 'FLASK_DEBUG' in request.form else 'False',
+                'FLASK_HOST': request.form['FLASK_HOST'],
+                'FLASK_PORT': request.form['FLASK_PORT'],
+                'DATABASE_URL': request.form['DATABASE_URL'],
+                'DATABASE_DEBUG': 'True' if 'DATABASE_DEBUG' in request.form else 'False'
+            }
+
+            # Validate critical values
+            for key, value in env_data.items():
+                is_valid, error_msg = validate_env_value(key, value)
+                if not is_valid:
+                    flash(f'Validation error for {key}: {error_msg}', 'danger')
+                    env_settings = load_env_settings()
+                    app_settings = load_config()
+                    return render_template('settings.html',
+                                         env_settings=env_settings,
+                                         app_settings=app_settings)
+
+            save_env_settings(env_data)
+
+            # Save config.json settings
+            config_data = {
+                'email_check_interval': int(request.form['email_check_interval']),
+                'log_level': request.form['log_level'],
+                'log_to_file': 'log_to_file' in request.form,
+                'log_file_path': request.form['log_file_path'],
+                'auto_apply_rules': 'auto_apply_rules' in request.form
+            }
+
+            # Validate application settings
+            if config_data['email_check_interval'] < 1:
+                flash('Email check interval must be at least 1 minute', 'danger')
+                env_settings = load_env_settings()
+                app_settings = load_config()
+                return render_template('settings.html',
+                                     env_settings=env_settings,
+                                     app_settings=app_settings)
+
+            if config_data['log_level'] not in ['DEBUG', 'INFO', 'WARNING', 'ERROR']:
+                flash('Invalid log level', 'danger')
+                env_settings = load_env_settings()
+                app_settings = load_config()
+                return render_template('settings.html',
+                                     env_settings=env_settings,
+                                     app_settings=app_settings)
+
+            save_config(config_data)
+
+            flash('Settings saved successfully! Restart required for Flask configuration changes.', 'success')
+            return redirect(url_for('settings'))
+        except Exception as e:
+            flash(f'Error saving settings: {str(e)}', 'danger')
+
+    # GET request
+    env_settings = load_env_settings()
+    app_settings = load_config()
+
+    return render_template('settings.html',
+                         env_settings=env_settings,
+                         app_settings=app_settings)
 
 
 if __name__ == '__main__':
