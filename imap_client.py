@@ -47,11 +47,16 @@ class IMAPClient:
         try:
             self.logger.info(f"Connecting to IMAP server {self.credential.host}:{self.credential.port}")
 
-            self.mailbox = MailBox(self.credential.host, self.credential.port)
-
             if self.credential.use_ssl:
+                self.mailbox = MailBox(self.credential.host, self.credential.port)
+                self.mailbox.login(self.credential.username, self.credential.password, initial_folder='INBOX')
+            elif self.credential.use_tls:
+                from imap_tools import MailBoxTls
+                self.mailbox = MailBoxTls(self.credential.host, self.credential.port)
                 self.mailbox.login(self.credential.username, self.credential.password, initial_folder='INBOX')
             else:
+                from imap_tools import MailBoxUnencrypted
+                self.mailbox = MailBoxUnencrypted(self.credential.host, self.credential.port)
                 self.mailbox.login(self.credential.username, self.credential.password, initial_folder='INBOX')
 
             self.connected = True
