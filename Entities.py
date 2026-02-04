@@ -67,6 +67,58 @@ class RuleAction(Base):
     rule = relationship("EmailRule", back_populates="rule_actions")
 
 
+class ServiceStatus(Base):
+    __tablename__ = "servicestatus"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    service_name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    last_check: Mapped[DateTime] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, nullable=True)
+    emails_processed: Mapped[int] = mapped_column(Integer, default=0)
+    rules_executed: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DryRunRequest(Base):
+    __tablename__ = "dryrunrequest"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailrule.id'), nullable=False)
+    email_credential_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailcredential.id'), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='pending')
+    max_emails: Mapped[int] = mapped_column(Integer, default=10)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
+    processed_at: Mapped[DateTime] = mapped_column(DateTime, nullable=True)
+
+    results = relationship("DryRunResult", back_populates="request", cascade="all, delete-orphan")
+
+
+class DryRunResult(Base):
+    __tablename__ = "dryrunresult"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[int] = mapped_column(Integer, ForeignKey('dryrunrequest.id'), nullable=False)
+    email_uid: Mapped[str] = mapped_column(String(100), nullable=False)
+    email_subject: Mapped[str] = mapped_column(String(255), nullable=True)
+    email_from: Mapped[str] = mapped_column(String(255), nullable=True)
+    email_date: Mapped[DateTime] = mapped_column(DateTime, nullable=True)
+    matched: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    condition_results: Mapped[str] = mapped_column(Text, nullable=True)
+    actions_would_apply: Mapped[str] = mapped_column(Text, nullable=True)
+
+    request = relationship("DryRunRequest", back_populates="results")
+
+
+class ProcessedEmail(Base):
+    __tablename__ = "processedemail"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email_credential_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailcredential.id'), nullable=False)
+    email_uid: Mapped[str] = mapped_column(String(100), nullable=False)
+    processed_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
+    rules_applied: Mapped[str] = mapped_column(Text, nullable=True)
+
+
 def create_session(engine) -> Session:
     """Creates a new database session"""
     from sqlalchemy.orm import sessionmaker

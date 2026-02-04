@@ -10,7 +10,14 @@ def get_default_config():
         'log_level': 'INFO',
         'log_to_file': True,
         'log_file_path': 'logs/mailmind.log',
-        'auto_apply_rules': False
+        'auto_apply_rules': False,
+        'service': {
+            'heartbeat_interval': 10,
+            'dry_run_poll_interval': 5,
+            'imap_reconnect_delay': 30,
+            'use_imap_idle': True,
+            'imap_poll_interval': 60
+        }
     }
 
 def load_config():
