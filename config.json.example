@@ -1,0 +1,7 @@
+{
+  "email_check_interval": 5,
+  "log_level": "INFO",
+  "log_to_file": true,
+  "log_file_path": "logs/mailmind.log",
+  "auto_apply_rules": false
+}

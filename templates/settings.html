@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - MailMind AI{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item active">Settings</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .settings-section {
+    margin-bottom: 2rem;
+  }
+  .password-toggle {
+    cursor: pointer;
+  }
+  .form-text {
+    font-size: 0.875rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="row">
+    <div class="col-lg-10">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Application Settings</h5>
+
+          <form method="POST" action="{{ url_for('settings') }}" id="settingsForm">
+
+            <!-- Flask Settings Section -->
+            <div class="settings-section">
+              <h6 class="text-primary mb-3">Flask Configuration</h6>
+              <p class="text-muted small">
+                <i class="bi bi-info-circle"></i> Changes to Flask settings require application restart
+              </p>
+
+              <div class="row mb-3">
+                <label for="FLASK_SECRET_KEY" class="col-sm-3 col-form-label">Secret Key</label>
+                <div class="col-sm-9">
+                  <div class="input-group">
+                    <input type="password" class="form-control" id="FLASK_SECRET_KEY" name="FLASK_SECRET_KEY"
+                           value="{{ env_settings.FLASK_SECRET_KEY }}" required minlength="32">
+                    <button class="btn btn-outline-secondary password-toggle" type="button"
+                            onclick="togglePassword('FLASK_SECRET_KEY')">
+                      <i class="bi bi-eye" id="FLASK_SECRET_KEY-icon"></i>
+                    </button>
+                  </div>
+                  <div class="form-text">Minimum 32 characters. Used for session security.</div>
+                </div>
+              </div>
+
+              <div class="row mb-3">
+                <label for="FLASK_DEBUG" class="col-sm-3 col-form-label">Debug Mode</label>
+                <div class="col-sm-9">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="FLASK_DEBUG" name="FLASK_DEBUG"
+                           {% if env_settings.FLASK_DEBUG.lower() in ['true', '1', 'yes'] %}checked{% endif %}>
+                    <label class="form-check-label" for="FLASK_DEBUG">
+                      Enable debug mode (disable in production)
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="row mb-3">
+                <label for="FLASK_HOST" class="col-sm-3 col-form-label">Host</label>
+                <div class="col-sm-9">
+                  <input type="text" class="form-control" id="FLASK_HOST" name="FLASK_HOST"
+                         value="{{ env_settings.FLASK_HOST }}" required>
+                  <div class="form-text">Server bind address (0.0.0.0 for all interfaces)</div>
+                </div>
+              </div>
+
+              <div class="row mb-3">
+                <label for="FLASK_PORT" class="col-sm-3 col-form-label">Port</label>
+                <div class="col-sm-9">
+                  <input type="number" class="form-control" id="FLASK_PORT" name="FLASK_PORT"
+                         value="{{ env_settings.FLASK_PORT }}" required min="1" max="65535">
+                  <div class="form-text">Port number (1-65535)</div>
+                </div>
+              </div>
+
+              <div class="row mb-3">
+                <label for="DATABASE_URL" class="col-sm-3 col-form-label">Database URL</label>
+                <div class="col-sm-9">
+                  <input type="text" class="form-control" id="DATABASE_URL" name="DATABASE_URL"
+                         value="{{ env_settings.DATABASE_URL }}" required>
+                  <div class="form-text">SQLAlchemy database connection string</div>
+                </div>
+              </div>
+
+              <div class="row mb-3">
+                <label for="DATABASE_DEBUG" class="col-sm-3 col-form-label">Database Debug</label>
+                <div class="col-sm-9">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="DATABASE_DEBUG" name="DATABASE_DEBUG"
+                           {% if env_settings.DATABASE_DEBUG.lower() in ['true', '1', 'yes'] %}checked{% endif %}>
+                    <label class="form-check-label" for="DATABASE_DEBUG">
+                      Log SQL queries (disable in production)
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <hr>
+
+            <!-- Application Settings Section -->
+            <div class="settings-section">
+              <h6 class="text-primary mb-3">Application Configuration</h6>
+
+              <div class="row mb-3">
+                <label for="email_check_interval" class="col-sm-3 col-form-label">Email Check Interval</label>
+                <div class="col-sm-9">
+                  <div class="input-group">
+                    <input type="number" class="form-control" id="email_check_interval" name="email_check_interval"
+                           value="{{ app_settings.email_check_interval }}" required min="1">
+                    <span class="input-group-text">minutes</span>
+                  </div>
+                  <div class="form-text">How often to check for new emails</div>
+                </div>
+              </div>
+
+              <div class="row mb-3">
+                <label for="log_level" class="col-sm-3 col-form-label">Log Level</label>
+                <div class="col-sm-9">
+                  <select class="form-select" id="log_level" name="log_level" required>
+                    <option value="DEBUG" {% if app_settings.log_level == 'DEBUG' %}selected{% endif %}>DEBUG</option>
+                    <option value="INFO" {% if app_settings.log_level == 'INFO' %}selected{% endif %}>INFO</option>
+                    <option value="WARNING" {% if app_settings.log_level == 'WARNING' %}selected{% endif %}>WARNING</option>
+                    <option value="ERROR" {% if app_settings.log_level == 'ERROR' %}selected{% endif %}>ERROR</option>
+                  </select>
+                  <div class="form-text">Minimum logging level</div>
+                </div>
+              </div>
+
+              <div class="row mb-3">
+                <label for="log_to_file" class="col-sm-3 col-form-label">Log to File</label>
+                <div class="col-sm-9">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="log_to_file" name="log_to_file"
+                           {% if app_settings.log_to_file %}checked{% endif %}>
+                    <label class="form-check-label" for="log_to_file">
+                      Write logs to file
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="row mb-3">
+                <label for="log_file_path" class="col-sm-3 col-form-label">Log File Path</label>
+                <div class="col-sm-9">
+                  <input type="text" class="form-control" id="log_file_path" name="log_file_path"
+                         value="{{ app_settings.log_file_path }}" required>
+                  <div class="form-text">Path where log files will be stored</div>
+                </div>
+              </div>
+
+              <div class="row mb-3">
+                <label for="auto_apply_rules" class="col-sm-3 col-form-label">Auto-Apply Rules</label>
+                <div class="col-sm-9">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="auto_apply_rules" name="auto_apply_rules"
+                           {% if app_settings.auto_apply_rules %}checked{% endif %}>
+                    <label class="form-check-label" for="auto_apply_rules">
+                      Automatically apply rules to incoming emails
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="col-sm-9 offset-sm-3">
+                <button type="submit" class="btn btn-primary">
+                  <i class="bi bi-save"></i> Save Settings
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="restoreDefaults()">
+                  <i class="bi bi-arrow-counterclockwise"></i> Restore Defaults
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function togglePassword(fieldId) {
+  const field = document.getElementById(fieldId);
+  const icon = document.getElementById(fieldId + '-icon');
+
+  if (field.type === 'password') {
+    field.type = 'text';
+    icon.classList.remove('bi-eye');
+    icon.classList.add('bi-eye-slash');
+  } else {
+    field.type = 'password';
+    icon.classList.remove('bi-eye-slash');
+    icon.classList.add('bi-eye');
+  }
+}
+
+function restoreDefaults() {
+  if (confirm('Restore application settings to defaults? Flask settings will not be changed.')) {
+    document.getElementById('email_check_interval').value = 5;
+    document.getElementById('log_level').value = 'INFO';
+    document.getElementById('log_to_file').checked = true;
+    document.getElementById('log_file_path').value = 'logs/mailmind.log';
+    document.getElementById('auto_apply_rules').checked = false;
+  }
+}
+
+// Form validation
+document.getElementById('settingsForm').addEventListener('submit', function(e) {
+  const secretKey = document.getElementById('FLASK_SECRET_KEY').value;
+  const port = parseInt(document.getElementById('FLASK_PORT').value);
+
+  if (secretKey.length < 32) {
+    e.preventDefault();
+    alert('Secret key must be at least 32 characters long');
+    return false;
+  }
+
+  if (port < 1 || port > 65535) {
+    e.preventDefault();
+    alert('Port must be between 1 and 65535');
+    return false;
+  }
+});
+</script>
+{% endblock %}
