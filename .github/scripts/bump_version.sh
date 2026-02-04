@@ -14,19 +14,30 @@ if [ -z "$CURRENT_VERSION" ] || [ -z "$BUMP_TYPE" ]; then
     exit 1
 fi
 
+# Extract pre-release suffix if present (e.g., "-pre", "-alpha", "-beta")
+SUFFIX=""
+if [[ "$CURRENT_VERSION" =~ ^([0-9.]+)(-[a-zA-Z0-9]+)$ ]]; then
+    BASE_VERSION="${BASH_REMATCH[1]}"
+    SUFFIX="${BASH_REMATCH[2]}"
+else
+    BASE_VERSION="$CURRENT_VERSION"
+fi
+
 # Parse version (support both 3-digit and 4-digit)
-if [[ "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+USE_BUILD=false
+if [[ "$BASE_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
     MAJOR="${BASH_REMATCH[1]}"
     MINOR="${BASH_REMATCH[2]}"
     PATCH="${BASH_REMATCH[3]}"
     BUILD="${BASH_REMATCH[4]}"
-elif [[ "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    USE_BUILD=true
+elif [[ "$BASE_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
     MAJOR="${BASH_REMATCH[1]}"
     MINOR="${BASH_REMATCH[2]}"
     PATCH="${BASH_REMATCH[3]}"
     BUILD=0
 else
-    echo "Error: Invalid version format '$CURRENT_VERSION'. Expected: X.Y.Z or X.Y.Z.B" >&2
+    echo "Error: Invalid version format '$CURRENT_VERSION'. Expected: X.Y.Z or X.Y.Z.B (optionally with suffix like -pre)" >&2
     exit 1
 fi
 
@@ -56,7 +67,17 @@ case "$BUMP_TYPE" in
         ;;
 esac
 
-NEW_VERSION="$MAJOR.$MINOR.$PATCH.$BUILD"
+# Format new version (preserve original format)
+if [ "$USE_BUILD" = true ]; then
+    NEW_VERSION="$MAJOR.$MINOR.$PATCH.$BUILD"
+else
+    NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+fi
+
+# Re-attach suffix if it was present
+if [ -n "$SUFFIX" ]; then
+    NEW_VERSION="$NEW_VERSION$SUFFIX"
+fi
 
 # Update __init__.py
 INIT_FILE="src/mailmind/__init__.py"
