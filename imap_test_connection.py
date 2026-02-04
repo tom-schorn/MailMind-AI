@@ -2,7 +2,7 @@
 
 import logging
 from typing import Tuple, Optional
-from imap_tools import MailBox, MailBoxTls, MailBoxUnencrypted
+from imap_tools import MailBox, MailBoxStartTls, MailBoxUnencrypted
 
 from Entities import EmailCredential
 
@@ -27,13 +27,13 @@ def test_imap_connection(credential: EmailCredential) -> Tuple[bool, str, Option
         ]
     elif credential.port == 143:
         test_configs = [
-            ('TLS', MailBoxTls, False, True),
+            ('TLS', MailBoxStartTls, False, True),
             ('Unencrypted', MailBoxUnencrypted, False, False),
         ]
     else:
         test_configs = [
             ('SSL', MailBox, True, False),
-            ('TLS', MailBoxTls, False, True),
+            ('TLS', MailBoxStartTls, False, True),
             ('Unencrypted', MailBoxUnencrypted, False, False),
         ]
 

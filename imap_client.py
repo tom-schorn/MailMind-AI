@@ -51,8 +51,8 @@ class IMAPClient:
                 self.mailbox = MailBox(self.credential.host, self.credential.port)
                 self.mailbox.login(self.credential.username, self.credential.password, initial_folder='INBOX')
             elif self.credential.use_tls:
-                from imap_tools import MailBoxTls
-                self.mailbox = MailBoxTls(self.credential.host, self.credential.port)
+                from imap_tools import MailBoxStartTls
+                self.mailbox = MailBoxStartTls(self.credential.host, self.credential.port)
                 self.mailbox.login(self.credential.username, self.credential.password, initial_folder='INBOX')
             else:
                 from imap_tools import MailBoxUnencrypted
