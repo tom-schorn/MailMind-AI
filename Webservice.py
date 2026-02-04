@@ -502,11 +502,16 @@ def test_rule_preview():
             imap_client.connect()
 
             try:
-                uids = imap_client.get_all_uids(limit=max_emails)
+                uids = imap_client.get_all_uids(limit=0)
                 evaluator = ConditionEvaluator(logger)
                 results = []
+                matched_count = 0
+                max_matches = 10
 
                 for uid in uids:
+                    if matched_count >= max_matches:
+                        break
+
                     email = imap_client.fetch_email(uid)
 
                     condition_results = []
@@ -526,8 +531,9 @@ def test_rule_preview():
                     else:
                         overall_match = any(c['matched'] for c in condition_results)
 
-                    actions_would_apply = []
                     if overall_match:
+                        matched_count += 1
+                        actions_would_apply = []
                         for action in actions:
                             action_type = action.get('action_type')
                             action_value = action.get('action_value', '')
@@ -545,15 +551,15 @@ def test_rule_preview():
                             elif action_type == 'modify_subject':
                                 actions_would_apply.append(f"modify_subject: {action_value}")
 
-                    results.append({
-                        'email_uid': uid,
-                        'email_subject': email.subject,
-                        'email_from': email.sender,
-                        'email_date': email.date.strftime('%Y-%m-%d %H:%M') if email.date else 'N/A',
-                        'matched': overall_match,
-                        'condition_results': condition_results,
-                        'actions_would_apply': actions_would_apply
-                    })
+                        results.append({
+                            'email_uid': uid,
+                            'email_subject': email.subject,
+                            'email_from': email.sender,
+                            'email_date': email.date.strftime('%Y-%m-%d %H:%M') if email.date else 'N/A',
+                            'matched': overall_match,
+                            'condition_results': condition_results,
+                            'actions_would_apply': actions_would_apply
+                        })
 
                 return jsonify({'status': 'success', 'results': results})
 

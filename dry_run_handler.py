@@ -96,32 +96,39 @@ class DryRunHandler:
 
         rule_engine = RuleEngine(imap_client, self.logger)
 
-        uids = imap_client.get_all_uids(limit=request.max_emails)
-        self.logger.info(f"Processing {len(uids)} emails for dry-run")
+        uids = imap_client.get_all_uids(limit=0)
+        self.logger.info(f"Processing emails for dry-run (max 10 matches)")
+
+        matched_count = 0
+        max_matches = 10
 
         for uid in uids:
+            if matched_count >= max_matches:
+                self.logger.info(f"Reached {max_matches} matches, stopping dry-run")
+                break
+
             try:
                 email = imap_client.fetch_email(uid)
 
                 matched, details = rule_engine.evaluate_rule(email, rule, conditions)
 
-                actions_would_apply = []
                 if matched:
+                    matched_count += 1
                     actions_would_apply = rule_engine.execute_actions(email, actions, dry_run=True)
 
-                result = DryRunResult(
-                    request_id=request.id,
-                    email_uid=uid,
-                    email_subject=email.subject,
-                    email_from=email.sender,
-                    email_date=email.date,
-                    matched=matched,
-                    condition_results=json.dumps(details),
-                    actions_would_apply=json.dumps(actions_would_apply)
-                )
+                    result = DryRunResult(
+                        request_id=request.id,
+                        email_uid=uid,
+                        email_subject=email.subject,
+                        email_from=email.sender,
+                        email_date=email.date,
+                        matched=matched,
+                        condition_results=json.dumps(details),
+                        actions_would_apply=json.dumps(actions_would_apply)
+                    )
 
-                self.session.add(result)
-                self.session.commit()
+                    self.session.add(result)
+                    self.session.commit()
 
             except Exception as e:
                 self.logger.error(f"Failed to process email {uid} in dry-run: {e}")
