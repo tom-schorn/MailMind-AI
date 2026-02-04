@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Service Status - MailMind AI{% endblock %}
+
+{% block page_title %}Email Service Status{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item active">Service Status</li>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="row">
+    <div class="col-lg-8">
+
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Email Service Status</h5>
+
+          {% if service_status %}
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <h6>Service Name</h6>
+              <p>{{ service_status.service_name }}</p>
+            </div>
+            <div class="col-md-6">
+              <h6>Status</h6>
+              <p>
+                {% if service_status.status == 'running' %}
+                  <span class="badge bg-success">Running</span>
+                {% elif service_status.status == 'stopped' %}
+                  <span class="badge bg-secondary">Stopped</span>
+                {% elif service_status.status == 'error' %}
+                  <span class="badge bg-danger">Error</span>
+                {% else %}
+                  <span class="badge bg-warning">{{ service_status.status }}</span>
+                {% endif %}
+              </p>
+            </div>
+          </div>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <h6>Last Check</h6>
+              <p>
+                {% if service_status.last_check %}
+                  {{ service_status.last_check.strftime('%Y-%m-%d %H:%M:%S') }}
+                {% else %}
+                  Never
+                {% endif %}
+              </p>
+            </div>
+            <div class="col-md-6">
+              <h6>Emails Processed</h6>
+              <p>{{ service_status.emails_processed }}</p>
+            </div>
+          </div>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <h6>Rules Executed</h6>
+              <p>{{ service_status.rules_executed }}</p>
+            </div>
+            <div class="col-md-6">
+              <h6>Last Error</h6>
+              <p>
+                {% if service_status.last_error %}
+                  <span class="text-danger">{{ service_status.last_error[:100] }}{% if service_status.last_error|length > 100 %}...{% endif %}</span>
+                {% else %}
+                  <span class="text-success">No errors</span>
+                {% endif %}
+              </p>
+            </div>
+          </div>
+
+          {% else %}
+          <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle"></i>
+            Email Service is not running or not registered.
+          </div>
+          {% endif %}
+
+          <div class="mt-4">
+            <button onclick="location.reload()" class="btn btn-primary">
+              <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Information</h5>
+
+          <p class="small">
+            This page shows the current status of the Email Service backend.
+          </p>
+
+          <ul class="small">
+            <li><strong>Running:</strong> Service is actively monitoring emails</li>
+            <li><strong>Stopped:</strong> Service has been shut down</li>
+            <li><strong>Error:</strong> Service encountered an error</li>
+          </ul>
+
+          <p class="small">
+            The service automatically processes emails according to your configured rules
+            when <code>auto_apply_rules</code> is enabled in settings.
+          </p>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<script>
+  // Auto-refresh every 10 seconds
+  setInterval(() => {
+    location.reload();
+  }, 10000);
+</script>
+
+{% endblock %}

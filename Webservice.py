@@ -1,8 +1,10 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from Entities import EmailCredential, EmailRule, RuleCondition, RuleAction, init_db, create_session
+from Entities import DryRunRequest, DryRunResult, ServiceStatus
 import os
+import json
 from dotenv import load_dotenv
 from config_manager import load_config, save_config
 from env_manager import load_env_settings, save_env_settings, validate_env_value
@@ -310,7 +312,14 @@ def settings():
                 'log_level': request.form['log_level'],
                 'log_to_file': 'log_to_file' in request.form,
                 'log_file_path': request.form['log_file_path'],
-                'auto_apply_rules': 'auto_apply_rules' in request.form
+                'auto_apply_rules': 'auto_apply_rules' in request.form,
+                'service': {
+                    'heartbeat_interval': int(request.form.get('heartbeat_interval', 10)),
+                    'dry_run_poll_interval': int(request.form.get('dry_run_poll_interval', 5)),
+                    'imap_reconnect_delay': int(request.form.get('imap_reconnect_delay', 30)),
+                    'use_imap_idle': 'use_imap_idle' in request.form,
+                    'imap_poll_interval': int(request.form.get('imap_poll_interval', 60))
+                }
             }
 
             # Validate application settings
@@ -344,6 +353,108 @@ def settings():
     return render_template('settings.html',
                          env_settings=env_settings,
                          app_settings=app_settings)
+
+
+# Dry-Run Testing
+@app.route('/rules/test/<int:id>', methods=['GET', 'POST'])
+def test_rule(id):
+    session = create_session(engine)
+    try:
+        rule = session.query(EmailRule).filter_by(id=id).first()
+        if not rule:
+            flash('Rule not found!', 'danger')
+            return redirect(url_for('list_rules'))
+
+        if request.method == 'POST':
+            max_emails = int(request.form.get('max_emails', 10))
+
+            dry_run_request = DryRunRequest(
+                rule_id=rule.id,
+                email_credential_id=rule.email_credential_id,
+                status='pending',
+                max_emails=max_emails
+            )
+            session.add(dry_run_request)
+            session.commit()
+
+            flash(f'Dry-run test started for rule "{rule.name}"', 'info')
+            return redirect(url_for('view_dry_run_results', request_id=dry_run_request.id))
+
+        return render_template('rules/test.html', rule=rule)
+    except Exception as e:
+        session.rollback()
+        flash(f'Error starting dry-run test: {str(e)}', 'danger')
+        return redirect(url_for('list_rules'))
+    finally:
+        session.close()
+
+
+@app.route('/rules/test/results/<int:request_id>')
+def view_dry_run_results(request_id):
+    session = create_session(engine)
+    try:
+        dry_run_request = session.query(DryRunRequest).filter_by(id=request_id).first()
+        if not dry_run_request:
+            flash('Dry-run request not found!', 'danger')
+            return redirect(url_for('list_rules'))
+
+        results = session.query(DryRunResult).filter_by(request_id=request_id).all()
+
+        results_data = []
+        for result in results:
+            condition_results = json.loads(result.condition_results) if result.condition_results else {}
+            actions_would_apply = json.loads(result.actions_would_apply) if result.actions_would_apply else []
+
+            results_data.append({
+                'id': result.id,
+                'email_uid': result.email_uid,
+                'email_subject': result.email_subject,
+                'email_from': result.email_from,
+                'email_date': result.email_date,
+                'matched': result.matched,
+                'condition_results': condition_results,
+                'actions_would_apply': actions_would_apply
+            })
+
+        return render_template('rules/test_results.html',
+                             dry_run_request=dry_run_request,
+                             results=results_data)
+    finally:
+        session.close()
+
+
+@app.route('/rules/test/status/<int:request_id>')
+def dry_run_status(request_id):
+    """AJAX endpoint to check dry-run status."""
+    session = create_session(engine)
+    try:
+        dry_run_request = session.query(DryRunRequest).filter_by(id=request_id).first()
+        if not dry_run_request:
+            return jsonify({'error': 'Request not found'}), 404
+
+        result_count = session.query(DryRunResult).filter_by(request_id=request_id).count()
+
+        return jsonify({
+            'status': dry_run_request.status,
+            'result_count': result_count,
+            'processed_at': str(dry_run_request.processed_at) if dry_run_request.processed_at else None
+        })
+    finally:
+        session.close()
+
+
+@app.route('/service/status')
+def service_status():
+    """Display service status page."""
+    session = create_session(engine)
+    try:
+        service_status = session.query(ServiceStatus).filter_by(
+            service_name='EmailService'
+        ).first()
+
+        return render_template('service/status.html', service_status=service_status)
+    finally:
+        session.close()
 
 
 if __name__ == '__main__':

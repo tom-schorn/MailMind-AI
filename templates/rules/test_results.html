@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}Test Results - MailMind AI{% endblock %}
+
+{% block page_title %}Dry-Run Test Results{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('list_rules') }}">Email Rules</a></li>
+<li class="breadcrumb-item active">Test Results</li>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="row">
+    <div class="col-lg-12">
+
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Test Results</h5>
+
+          <div class="mb-3">
+            <p><strong>Status:</strong>
+              {% if dry_run_request.status == 'pending' %}
+                <span class="badge bg-warning" id="status-badge">Pending</span>
+              {% elif dry_run_request.status == 'processing' %}
+                <span class="badge bg-info" id="status-badge">Processing...</span>
+              {% elif dry_run_request.status == 'completed' %}
+                <span class="badge bg-success" id="status-badge">Completed</span>
+              {% elif dry_run_request.status == 'failed' %}
+                <span class="badge bg-danger" id="status-badge">Failed</span>
+              {% endif %}
+            </p>
+            <p><strong>Emails Tested:</strong> <span id="result-count">{{ results|length }}</span></p>
+            {% if dry_run_request.processed_at %}
+            <p><strong>Completed At:</strong> {{ dry_run_request.processed_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+            {% endif %}
+          </div>
+
+          {% if dry_run_request.status in ['pending', 'processing'] %}
+          <div class="alert alert-info" id="processing-alert">
+            <i class="bi bi-hourglass-split"></i>
+            Processing... This page will automatically update.
+          </div>
+          {% endif %}
+
+          <table class="table table-striped">
+            <thead>
+              <tr>
+                <th>Subject</th>
+                <th>From</th>
+                <th>Date</th>
+                <th>Match</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="results-table">
+              {% for result in results %}
+              <tr>
+                <td>{{ result.email_subject[:50] }}{% if result.email_subject|length > 50 %}...{% endif %}</td>
+                <td>{{ result.email_from }}</td>
+                <td>{{ result.email_date.strftime('%Y-%m-%d %H:%M') if result.email_date else 'N/A' }}</td>
+                <td>
+                  {% if result.matched %}
+                    <span class="badge bg-success">Matched</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Not Matched</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <button class="btn btn-sm btn-info" type="button" data-bs-toggle="collapse"
+                          data-bs-target="#details-{{ result.id }}" aria-expanded="false">
+                    <i class="bi bi-eye"></i> View
+                  </button>
+                </td>
+              </tr>
+              <tr class="collapse" id="details-{{ result.id }}">
+                <td colspan="5">
+                  <div class="card card-body">
+                    <h6>Condition Results:</h6>
+                    {% if result.condition_results %}
+                      {% for cond in result.condition_results.condition_results %}
+                      <div class="mb-2">
+                        <strong>{{ cond.field }}</strong> {{ cond.operator }} "{{ cond.value }}":
+                        {% if cond.matched %}
+                          <span class="badge bg-success">Matched</span>
+                        {% else %}
+                          <span class="badge bg-secondary">Not Matched</span>
+                        {% endif %}
+                        <br>
+                        <small class="text-muted">{{ cond.reason }}</small>
+                      </div>
+                      {% endfor %}
+                    {% endif %}
+
+                    {% if result.matched and result.actions_would_apply %}
+                    <h6 class="mt-3">Actions that would be applied:</h6>
+                    <ul>
+                      {% for action in result.actions_would_apply %}
+                      <li>{{ action }}</li>
+                      {% endfor %}
+                    </ul>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% else %}
+              <tr id="no-results">
+                <td colspan="5" class="text-center">No results yet. Processing...</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+
+          <div class="mt-3">
+            <a href="{{ url_for('list_rules') }}" class="btn btn-secondary">
+              <i class="bi bi-arrow-left"></i> Back to Rules
+            </a>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+{% if dry_run_request.status in ['pending', 'processing'] %}
+<script>
+  // Auto-refresh results every 3 seconds
+  const requestId = {{ dry_run_request.id }};
+
+  function checkStatus() {
+    fetch(`/rules/test/status/${requestId}`)
+      .then(response => response.json())
+      .then(data => {
+        document.getElementById('status-badge').textContent = data.status;
+        document.getElementById('result-count').textContent = data.result_count;
+
+        if (data.status === 'completed' || data.status === 'failed') {
+          location.reload();
+        }
+      })
+      .catch(error => console.error('Error:', error));
+  }
+
+  // Check every 3 seconds
+  setInterval(checkStatus, 3000);
+</script>
+{% endif %}
+
+{% endblock %}

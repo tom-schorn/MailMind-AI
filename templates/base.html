@@ -64,6 +64,13 @@
       </li><!-- End Email Rules Nav -->
 
       <li class="nav-item">
+        <a class="nav-link {% if request.endpoint != 'service_status' %}collapsed{% endif %}" href="{{ url_for('service_status') }}">
+          <i class="bi bi-cpu"></i>
+          <span>Service Status</span>
+        </a>
+      </li><!-- End Service Status Nav -->
+
+      <li class="nav-item">
         <a class="nav-link {% if request.endpoint != 'settings' %}collapsed{% endif %}" href="{{ url_for('settings') }}">
           <i class="bi bi-gear"></i>
           <span>Settings</span>

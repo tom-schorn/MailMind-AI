@@ -54,6 +54,9 @@
                 <td>{{ rule.conditions|length }}</td>
                 <td>{{ rule.rule_actions|length }}</td>
                 <td>
+                  <a href="{{ url_for('test_rule', id=rule.id) }}" class="btn btn-sm btn-info" title="Test Rule">
+                    <i class="bi bi-play-circle"></i>
+                  </a>
                   <a href="{{ url_for('edit_rule', id=rule.id) }}" class="btn btn-sm btn-warning" title="Edit">
                     <i class="bi bi-pencil"></i>
                   </a>

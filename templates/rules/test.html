@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Test Rule - MailMind AI{% endblock %}
+
+{% block page_title %}Test Email Rule{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('list_rules') }}">Email Rules</a></li>
+<li class="breadcrumb-item active">Test Rule</li>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="row">
+    <div class="col-lg-8">
+
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Dry-Run Test: {{ rule.name }}</h5>
+
+          <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i>
+            This will test the rule against recent emails without actually applying any actions.
+            You'll see which emails would match and what actions would be taken.
+          </div>
+
+          <form method="POST">
+            <div class="mb-3">
+              <label for="max_emails" class="form-label">Number of Emails to Test</label>
+              <input type="number" class="form-control" id="max_emails" name="max_emails"
+                     value="10" min="1" max="100" required>
+              <small class="form-text text-muted">
+                The test will check the most recent emails in your inbox (max 100)
+              </small>
+            </div>
+
+            <div class="mb-3">
+              <h6>Rule Details:</h6>
+              <p><strong>Email Account:</strong> {{ rule.email_account.email_address }}</p>
+              <p><strong>Status:</strong>
+                {% if rule.enabled %}
+                  <span class="badge bg-success">Enabled</span>
+                {% else %}
+                  <span class="badge bg-secondary">Disabled</span>
+                {% endif %}
+              </p>
+              <p><strong>Logic:</strong> <span class="badge bg-info">{{ rule.condition }}</span></p>
+              <p><strong>Conditions:</strong> {{ rule.conditions|length }}</p>
+              <p><strong>Actions:</strong> {{ rule.rule_actions|length }}</p>
+            </div>
+
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-play-circle"></i> Start Test
+              </button>
+              <a href="{{ url_for('list_rules') }}" class="btn btn-secondary">
+                <i class="bi bi-x-circle"></i> Cancel
+              </a>
+            </div>
+          </form>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+{% endblock %}
