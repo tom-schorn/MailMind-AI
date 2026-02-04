@@ -77,6 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0-pre] - 2026-02-04
+
+### Added
+- add Docker data volume and environment variable override
+
+
 ## [1.0.1-pre] - 2026-02-04
 
 ### Fixed
