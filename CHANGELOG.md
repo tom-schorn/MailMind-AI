@@ -77,6 +77,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1-pre] - 2026-02-04
+
+### Fixed
+- handle pre-release version suffixes in bump script
+- deploy pre-releases regardless of major version
+
+
 ### Planned
 - OAuth2 authentication support
 - Email templates
