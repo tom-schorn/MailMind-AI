@@ -4,6 +4,8 @@ from datetime import datetime
 from email.message import Message
 from typing import Callable, Optional
 import time
+import socket
+import errno
 
 from imap_tools import MailBox, AND, MailMessage
 
@@ -76,6 +78,22 @@ class IMAPClient:
                 self.logger.info(f"Disconnected from {self.credential.email_address}")
             except Exception as e:
                 self.logger.error(f"Error during disconnect: {e}")
+
+    def reconnect(self) -> None:
+        """Reconnect to IMAP server after connection loss."""
+        self.logger.warning("Connection lost, attempting to reconnect...")
+        try:
+            if self.mailbox:
+                try:
+                    self.mailbox.logout()
+                except:
+                    pass
+            self.connected = False
+            self.connect()
+            self.logger.info("Reconnection successful")
+        except Exception as e:
+            self.logger.error(f"Reconnection failed: {e}")
+            raise
 
     def list_folders(self) -> list[dict]:
         """
@@ -175,7 +193,7 @@ class IMAPClient:
 
     def get_all_uids(self, folder: str = "INBOX", limit: int = 0) -> list[str]:
         """
-        Get all UIDs in folder.
+        Get all UIDs in folder with auto-reconnect on broken pipe.
 
         Args:
             folder: Folder name (default: INBOX)
@@ -187,21 +205,33 @@ class IMAPClient:
         if not self.connected:
             raise ConnectionError("Not connected to IMAP server")
 
-        try:
-            self.mailbox.folder.set(folder)
-            uids = []
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                self.mailbox.folder.set(folder)
+                uids = []
 
-            for msg in self.mailbox.fetch(AND(all=True), mark_seen=False, reverse=True):
-                uids.append(msg.uid)
-                if limit > 0 and len(uids) >= limit:
-                    break
+                for msg in self.mailbox.fetch(AND(all=True), mark_seen=False, reverse=True):
+                    uids.append(msg.uid)
+                    if limit > 0 and len(uids) >= limit:
+                        break
 
-            self.logger.debug(f"Found {len(uids)} emails in {folder}")
-            return uids
+                self.logger.debug(f"Found {len(uids)} emails in {folder}")
+                return uids
 
-        except Exception as e:
-            self.logger.error(f"Failed to get UIDs from {folder}: {e}")
-            raise
+            except (socket.error, OSError) as e:
+                if hasattr(e, 'errno') and e.errno in (errno.EPIPE, errno.ECONNRESET):
+                    if attempt < max_retries - 1:
+                        self.logger.warning(f"Socket error (broken pipe), reconnecting... (attempt {attempt + 1}/{max_retries})")
+                        self.reconnect()
+                        continue
+                self.logger.error(f"Failed to get UIDs from {folder}: {e}")
+                raise
+            except Exception as e:
+                self.logger.error(f"Failed to get UIDs from {folder}: {e}")
+                raise
+
+        raise ConnectionError("Failed to get UIDs after reconnection attempts")
 
     def get_unseen_uids(self, folder: str = "INBOX") -> list[str]:
         """
@@ -330,7 +360,7 @@ class IMAPClient:
             raise
 
     def _watch_idle(self, callback: Callable, stop_check: Callable, folder: str = 'INBOX') -> None:
-        """Watch using IMAP IDLE command."""
+        """Watch using IMAP IDLE command with auto-reconnect."""
         self.mailbox.folder.set(folder)
         last_uids = set(self.get_all_uids(folder))
 
@@ -348,17 +378,36 @@ class IMAPClient:
 
                     last_uids = current_uids
 
+            except (socket.error, OSError) as e:
+                if hasattr(e, 'errno') and e.errno in (errno.EPIPE, errno.ECONNRESET):
+                    self.logger.warning("Socket error in IDLE watch, reconnecting...")
+                    try:
+                        self.reconnect()
+                        self.mailbox.folder.set(folder)
+                        last_uids = set(self.get_all_uids(folder))
+                    except Exception as reconnect_error:
+                        self.logger.error(f"Reconnection failed: {reconnect_error}")
+                        time.sleep(5)
+                else:
+                    self.logger.error(f"Socket error in IDLE watch: {e}")
+                    time.sleep(5)
             except Exception as e:
                 self.logger.error(f"Error in IDLE watch: {e}")
                 time.sleep(5)
 
     def _watch_polling(self, callback: Callable, stop_check: Callable, folder: str = 'INBOX', interval: int = 60) -> None:
-        """Watch using polling."""
+        """Watch using polling with auto-reconnect on broken pipe."""
         self.mailbox.folder.set(folder)
         last_uids = set(self.get_all_uids(folder))
 
         while not stop_check():
             try:
+                # Send NOOP to keep connection alive before sleeping
+                try:
+                    self.mailbox.client.noop()
+                except:
+                    pass
+
                 time.sleep(interval)
 
                 current_uids = set(self.get_all_uids(folder))
@@ -370,6 +419,19 @@ class IMAPClient:
 
                 last_uids = current_uids
 
+            except (socket.error, OSError) as e:
+                if hasattr(e, 'errno') and e.errno in (errno.EPIPE, errno.ECONNRESET):
+                    self.logger.warning("Socket error in polling watch, reconnecting...")
+                    try:
+                        self.reconnect()
+                        self.mailbox.folder.set(folder)
+                        last_uids = set(self.get_all_uids(folder))
+                    except Exception as reconnect_error:
+                        self.logger.error(f"Reconnection failed: {reconnect_error}")
+                        time.sleep(5)
+                else:
+                    self.logger.error(f"Socket error in polling watch: {e}")
+                    time.sleep(5)
             except Exception as e:
                 self.logger.error(f"Error in polling watch: {e}")
                 time.sleep(5)
