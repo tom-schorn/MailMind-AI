@@ -15,10 +15,8 @@ from sqlalchemy.orm import sessionmaker, Session
 
 from config_manager import load_config
 from LoggingService import LoggingService
-from path_manager import get_database_url
+from utils import get_database_url
 from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, ProcessedEmail
-from service_manager import ServiceManager
-from dry_run_handler import DryRunHandler
 
 
 @dataclass
@@ -850,6 +848,162 @@ class EmailProcessor:
             self.session.rollback()
 
 
+class ServiceManager:
+    """Manages service status tracking and heartbeat."""
+
+    def __init__(self, session: Session, logger: logging.Logger, service_name: str = "EmailService"):
+        """
+        Initialize service manager.
+
+        Args:
+            session: SQLAlchemy database session
+            logger: Logger instance
+            service_name: Name of the service
+        """
+        self.session = session
+        self.logger = logger
+        self.service_name = service_name
+        self.status_id = None
+
+    def register_service(self) -> None:
+        """Register service in database."""
+        try:
+            from DatabaseService import ServiceStatus
+            existing = self.session.query(ServiceStatus).filter_by(
+                service_name=self.service_name
+            ).first()
+
+            if existing:
+                existing.status = 'running'
+                existing.last_check = datetime.now()
+                existing.last_error = None
+                self.status_id = existing.id
+                self.logger.info(f"Service '{self.service_name}' re-registered")
+            else:
+                status = ServiceStatus(
+                    service_name=self.service_name,
+                    status='running',
+                    last_check=datetime.now(),
+                    last_error=None,
+                    emails_processed=0,
+                    rules_executed=0
+                )
+                self.session.add(status)
+                self.session.commit()
+                self.status_id = status.id
+                self.logger.info(f"Service '{self.service_name}' registered")
+
+            self.session.commit()
+
+        except Exception as e:
+            self.logger.error(f"Failed to register service: {e}")
+            self.session.rollback()
+
+    def update_status(self, status: str, error: str = None) -> None:
+        """
+        Update service status.
+
+        Args:
+            status: New status (running/stopped/error)
+            error: Optional error message
+        """
+        try:
+            from DatabaseService import ServiceStatus
+            service_status = self.session.query(ServiceStatus).filter_by(
+                service_name=self.service_name
+            ).first()
+
+            if service_status:
+                service_status.status = status
+                service_status.last_check = datetime.now()
+                if error:
+                    service_status.last_error = error
+
+                self.session.commit()
+                self.logger.debug(f"Service status updated to: {status}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to update status: {e}")
+            self.session.rollback()
+
+    def increment_emails_processed(self) -> None:
+        """Increment emails processed counter."""
+        try:
+            from DatabaseService import ServiceStatus
+            service_status = self.session.query(ServiceStatus).filter_by(
+                service_name=self.service_name
+            ).first()
+
+            if service_status:
+                service_status.emails_processed += 1
+                self.session.commit()
+
+        except Exception as e:
+            self.logger.error(f"Failed to increment emails processed: {e}")
+            self.session.rollback()
+
+    def increment_rules_executed(self) -> None:
+        """Increment rules executed counter."""
+        try:
+            from DatabaseService import ServiceStatus
+            service_status = self.session.query(ServiceStatus).filter_by(
+                service_name=self.service_name
+            ).first()
+
+            if service_status:
+                service_status.rules_executed += 1
+                self.session.commit()
+
+        except Exception as e:
+            self.logger.error(f"Failed to increment rules executed: {e}")
+            self.session.rollback()
+
+    def heartbeat(self) -> None:
+        """Update last check timestamp."""
+        try:
+            from DatabaseService import ServiceStatus
+            service_status = self.session.query(ServiceStatus).filter_by(
+                service_name=self.service_name
+            ).first()
+
+            if service_status:
+                service_status.last_check = datetime.now()
+                self.session.commit()
+
+        except Exception as e:
+            self.logger.error(f"Failed to update heartbeat: {e}")
+            self.session.rollback()
+
+    def get_status(self) -> dict:
+        """
+        Get current service status.
+
+        Returns:
+            Dictionary with status information
+        """
+        try:
+            from DatabaseService import ServiceStatus
+            service_status = self.session.query(ServiceStatus).filter_by(
+                service_name=self.service_name
+            ).first()
+
+            if service_status:
+                return {
+                    'service_name': service_status.service_name,
+                    'status': service_status.status,
+                    'last_check': service_status.last_check,
+                    'last_error': service_status.last_error,
+                    'emails_processed': service_status.emails_processed,
+                    'rules_executed': service_status.rules_executed
+                }
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Failed to get status: {e}")
+            return None
+
+
 class EMailService:
     """Main email service orchestrator."""
 
@@ -1138,3 +1292,223 @@ class EMailService:
 if __name__ == "__main__":
     service = EMailService()
     service.start()
+
+
+class DryRunHandler:
+    """Handles dry-run processing of email rules."""
+
+    def __init__(self, session: Session, config: dict, logger: logging.Logger):
+        """
+        Initialize dry-run handler.
+
+        Args:
+            session: SQLAlchemy database session
+            config: Configuration dictionary
+            logger: Logger instance
+        """
+        self.session = session
+        self.config = config
+        self.logger = logger
+
+    def check_pending_requests(self):
+        """
+        Check for pending dry-run requests.
+
+        Returns:
+            List of pending DryRunRequest objects
+        """
+        try:
+            from DatabaseService import DryRunRequest
+            pending = self.session.query(DryRunRequest).filter_by(
+                status='pending'
+            ).all()
+
+            return pending
+
+        except Exception as e:
+            self.logger.error(f"Failed to check pending requests: {e}")
+            return []
+
+    def process_request(self, request) -> None:
+        """
+        Process a dry-run request.
+
+        Args:
+            request: DryRunRequest to process
+        """
+        self.logger.info(f"Processing dry-run request {request.id}")
+
+        try:
+            from DatabaseService import EmailRule, EmailCredential, RuleCondition, RuleAction
+            
+            request.status = 'processing'
+            self.session.commit()
+
+            rule = self.session.query(EmailRule).filter_by(id=request.rule_id).first()
+            if not rule:
+                raise ValueError(f"Rule {request.rule_id} not found")
+
+            credential = self.session.query(EmailCredential).filter_by(
+                id=request.email_credential_id
+            ).first()
+            if not credential:
+                raise ValueError(f"Credential {request.email_credential_id} not found")
+
+            imap_client = IMAPClient(credential, self.config, self.logger)
+            imap_client.connect()
+
+            try:
+                self._process_emails(request, rule, imap_client)
+
+                request.status = 'completed'
+                request.processed_at = datetime.now()
+                self.session.commit()
+
+                self.logger.info(f"Dry-run request {request.id} completed")
+
+            finally:
+                imap_client.disconnect()
+
+        except Exception as e:
+            error_msg = f"Failed to process dry-run request {request.id}: {e}"
+            self.logger.error(error_msg)
+
+            request.status = 'failed'
+            request.processed_at = datetime.now()
+            self.session.commit()
+
+    def _process_emails(self, request, rule, imap_client: 'IMAPClient') -> None:
+        """Process emails for dry-run evaluation."""
+        from DatabaseService import RuleCondition, RuleAction, DryRunResult
+        
+        conditions = self.session.query(RuleCondition).filter_by(rule_id=rule.id).all()
+        actions = self.session.query(RuleAction).filter_by(rule_id=rule.id).all()
+
+        rule_engine = RuleEngine(imap_client, self.logger)
+
+        uids = imap_client.get_all_uids(limit=0)
+        self.logger.info(f"Processing emails for dry-run (max 10 matches)")
+
+        matched_count = 0
+        max_matches = 10
+
+        for uid in uids:
+            if matched_count >= max_matches:
+                self.logger.info(f"Reached {max_matches} matches, stopping dry-run")
+                break
+
+            try:
+                email = imap_client.fetch_email(uid)
+
+                matched, details = rule_engine.evaluate_rule(email, rule, conditions)
+
+                if matched:
+                    matched_count += 1
+                    actions_would_apply = rule_engine.execute_actions(email, actions, dry_run=True)
+
+                    result = DryRunResult(
+                        request_id=request.id,
+                        email_uid=uid,
+                        email_subject=email.subject,
+                        email_from=email.sender,
+                        email_date=email.date,
+                        matched=matched,
+                        condition_results=json.dumps(details),
+                        actions_would_apply=json.dumps(actions_would_apply)
+                    )
+
+                    self.session.add(result)
+                    self.session.commit()
+
+            except Exception as e:
+                self.logger.error(f"Failed to process email {uid} in dry-run: {e}")
+                continue
+
+
+def test_imap_connection(credential) -> Tuple[bool, str, Optional[dict]]:
+    """
+    Test IMAP connection and auto-detect best settings.
+
+    Args:
+        credential: EmailCredential to test
+
+    Returns:
+        Tuple of (success: bool, message: str, suggested_settings: dict)
+    """
+    from imap_tools import MailBoxStartTls, MailBoxUnencrypted
+    import logging
+    
+    logger = logging.getLogger('MailMind')
+
+    test_configs = []
+
+    if credential.port == 993:
+        test_configs = [
+            ('SSL', MailBox, True, False),
+        ]
+    elif credential.port == 143:
+        test_configs = [
+            ('TLS', MailBoxStartTls, False, True),
+            ('Unencrypted', MailBoxUnencrypted, False, False),
+        ]
+    else:
+        test_configs = [
+            ('SSL', MailBox, True, False),
+            ('TLS', MailBoxStartTls, False, True),
+            ('Unencrypted', MailBoxUnencrypted, False, False),
+        ]
+
+    for name, mailbox_class, use_ssl, use_tls in test_configs:
+        try:
+            logger.info(f"Testing {name} connection to {credential.host}:{credential.port}")
+
+            mailbox = mailbox_class(credential.host, credential.port)
+            mailbox.login(credential.username, credential.password, initial_folder='INBOX')
+            mailbox.logout()
+
+            return (
+                True,
+                f"Connection successful using {name}",
+                {'use_ssl': use_ssl, 'use_tls': use_tls, 'port': credential.port}
+            )
+
+        except Exception as e:
+            logger.debug(f"{name} failed: {e}")
+            continue
+
+    return (
+        False,
+        f"All connection methods failed. Check credentials and server settings.",
+        None
+    )
+
+
+def suggest_imap_settings(host: str, port: int) -> dict:
+    """
+    Suggest IMAP settings based on common configurations.
+
+    Args:
+        host: IMAP server hostname
+        port: IMAP server port
+
+    Returns:
+        Dictionary with suggested settings
+    """
+    common_configs = {
+        'imap.gmail.com': {'port': 993, 'use_ssl': True, 'use_tls': False},
+        'outlook.office365.com': {'port': 993, 'use_ssl': True, 'use_tls': False},
+        'imap.mail.yahoo.com': {'port': 993, 'use_ssl': True, 'use_tls': False},
+        'imap.aol.com': {'port': 993, 'use_ssl': True, 'use_tls': False},
+        'imap.gmx.net': {'port': 993, 'use_ssl': True, 'use_tls': False},
+        'imap.web.de': {'port': 993, 'use_ssl': True, 'use_tls': False},
+    }
+
+    if host in common_configs:
+        return common_configs[host]
+
+    if port == 993:
+        return {'port': 993, 'use_ssl': True, 'use_tls': False}
+    elif port == 143:
+        return {'port': 143, 'use_ssl': False, 'use_tls': True}
+    else:
+        return {'port': 993, 'use_ssl': True, 'use_tls': False}

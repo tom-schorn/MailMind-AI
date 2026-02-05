@@ -5,8 +5,7 @@ from dotenv import load_dotenv
 from DatabaseService import DatabaseService
 from WebService import app
 from EMailService import EMailService
-from path_manager import get_env_file, get_database_url, ensure_data_dir
-from env_manager import sync_env_from_system
+from utils import get_env_file, get_database_url, ensure_data_dir, sync_env_from_system
 
 
 def start_flask():

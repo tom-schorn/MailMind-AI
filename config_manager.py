@@ -1,12 +1,12 @@
 import json
 import os
-from path_manager import get_config_file, ensure_data_dir
+from utils import get_config_file, ensure_data_dir
 
 CONFIG_FILE = None  # Will be set dynamically
 
 def get_default_config():
     """Return default configuration settings."""
-    from path_manager import DATA_DIR
+    from utils import DATA_DIR
     log_path = os.path.join(DATA_DIR, 'logs', 'mailmind.log')
 
     return {
