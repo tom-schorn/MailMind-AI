@@ -5,6 +5,7 @@ on:
     workflows: ["Version Bump"]
     types: [completed]
     branches: [master]
+  workflow_dispatch:
 
 env:
   REGISTRY: registry.ts-entwicklung.de
