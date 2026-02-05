@@ -4,7 +4,7 @@ import logging
 from typing import Tuple, Optional
 from imap_tools import MailBox, MailBoxStartTls, MailBoxUnencrypted
 
-from Entities import EmailCredential
+from DatabaseService import EmailCredential
 
 
 def test_imap_connection(credential: EmailCredential) -> Tuple[bool, str, Optional[dict]]:

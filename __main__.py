@@ -2,10 +2,9 @@ import os
 import threading
 from dotenv import load_dotenv
 
-from sqlalchemy import create_engine
-from Entities import init_db
-from Webservice import app
-from EmailService import EmailService
+from DatabaseService import DatabaseService
+from WebService import app
+from EMailService import EMailService
 from path_manager import get_env_file, get_database_url, ensure_data_dir
 from env_manager import sync_env_from_system
 
@@ -28,8 +27,8 @@ def start_flask():
 
 
 def start_email_service():
-    """Start EmailService in main thread."""
-    service = EmailService()
+    """Start EMailService in main thread."""
+    service = EMailService()
     service.start()
 
 
@@ -47,8 +46,8 @@ if __name__ == "__main__":
 
     # Initialize database
     db_url = get_database_url()
-    engine = create_engine(db_url)
-    init_db(engine)
+    db_service = DatabaseService(db_url)
+    db_service.init_db()
 
     flask_thread = threading.Thread(target=start_flask, daemon=True, name="Flask")
     flask_thread.start()

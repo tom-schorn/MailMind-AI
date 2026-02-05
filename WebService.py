@@ -1,8 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-from Entities import EmailCredential, EmailRule, RuleCondition, RuleAction, init_db, create_session
-from Entities import DryRunRequest, DryRunResult, ServiceStatus
+from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, DatabaseService
+from DatabaseService import DryRunRequest, DryRunResult, ServiceStatus
 import os
 import json
 from dotenv import load_dotenv
@@ -21,7 +21,9 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-pr
 database_debug_value = os.environ.get('DATABASE_DEBUG', 'false')
 database_debug = database_debug_value.lower() in ('true', '1', 'yes')
 engine = create_engine(get_database_url(), echo=database_debug)
-init_db(engine)
+
+db_service = DatabaseService(get_database_url())
+db_service.init_db()
 
 
 @app.route('/')
@@ -31,7 +33,7 @@ def index():
 
 @app.route('/accounts')
 def list_accounts():
-    session = create_session(engine)
+    session = db_service.get_session()
     try:
         accounts = session.query(EmailCredential).all()
         return render_template('accounts/list.html', accounts=accounts)
@@ -42,7 +44,7 @@ def list_accounts():
 @app.route('/accounts/add', methods=['GET', 'POST'])
 def add_account():
     if request.method == 'POST':
-        session = create_session(engine)
+        session = db_service.get_session()
         try:
             encryption = request.form.get('encryption', 'auto')
 
@@ -84,7 +86,7 @@ def add_account():
 
 @app.route('/accounts/edit/<int:id>', methods=['GET', 'POST'])
 def edit_account(id):
-    session = create_session(engine)
+    session = db_service.get_session()
     try:
         account = session.query(EmailCredential).filter_by(id=id).first()
         if not account:
@@ -119,7 +121,7 @@ def edit_account(id):
 
 @app.route('/accounts/delete/<int:id>', methods=['POST'])
 def delete_account(id):
-    session = create_session(engine)
+    session = db_service.get_session()
     try:
         account = session.query(EmailCredential).filter_by(id=id).first()
         if account:
@@ -140,7 +142,7 @@ def delete_account(id):
 # Email Rules Management
 @app.route('/rules')
 def list_rules():
-    session = create_session(engine)
+    session = db_service.get_session()
     try:
         rules = session.query(EmailRule).all()
         return render_template('rules/list.html', rules=rules)
@@ -151,7 +153,7 @@ def list_rules():
 @app.route('/api/folders/<int:credential_id>')
 def get_folders(credential_id):
     """Get list of available IMAP folders for a credential."""
-    session = create_session(engine)
+    session = db_service.get_session()
     try:
         credential = session.query(EmailCredential).filter_by(id=credential_id).first()
         if not credential:
@@ -192,7 +194,7 @@ def get_folders(credential_id):
 @app.route('/rules/add', methods=['GET', 'POST'])
 def add_rule():
     if request.method == 'POST':
-        session = create_session(engine)
+        session = db_service.get_session()
         try:
             # Create EmailRule
             rule = EmailRule(
@@ -244,7 +246,7 @@ def add_rule():
             session.close()
 
     # GET request - show form
-    session = create_session(engine)
+    session = db_service.get_session()
     try:
         accounts = session.query(EmailCredential).all()
         return render_template('rules/add.html', accounts=accounts)
@@ -254,7 +256,7 @@ def add_rule():
 
 @app.route('/rules/edit/<int:id>', methods=['GET', 'POST'])
 def edit_rule(id):
-    session = create_session(engine)
+    session = db_service.get_session()
     try:
         rule = session.query(EmailRule).filter_by(id=id).first()
         if not rule:
@@ -318,7 +320,7 @@ def edit_rule(id):
 
 @app.route('/rules/delete/<int:id>', methods=['POST'])
 def delete_rule(id):
-    session = create_session(engine)
+    session = db_service.get_session()
     try:
         rule = session.query(EmailRule).filter_by(id=id).first()
         if rule:
@@ -418,7 +420,7 @@ def settings():
 # Dry-Run Testing
 @app.route('/rules/test/<int:id>', methods=['GET', 'POST'])
 def test_rule(id):
-    session = create_session(engine)
+    session = db_service.get_session()
     try:
         rule = session.query(EmailRule).filter_by(id=id).first()
         if not rule:
@@ -451,7 +453,7 @@ def test_rule(id):
 
 @app.route('/rules/test/results/<int:request_id>')
 def view_dry_run_results(request_id):
-    session = create_session(engine)
+    session = db_service.get_session()
     try:
         dry_run_request = session.query(DryRunRequest).filter_by(id=request_id).first()
         if not dry_run_request:
@@ -486,7 +488,7 @@ def view_dry_run_results(request_id):
 @app.route('/rules/test/status/<int:request_id>')
 def dry_run_status(request_id):
     """AJAX endpoint to check dry-run status."""
-    session = create_session(engine)
+    session = db_service.get_session()
     try:
         dry_run_request = session.query(DryRunRequest).filter_by(id=request_id).first()
         if not dry_run_request:
@@ -528,7 +530,7 @@ def get_test_logs(session_id):
 @app.route('/service/status')
 def service_status():
     """Display service status page."""
-    session = create_session(engine)
+    session = db_service.get_session()
     try:
         service_status = session.query(ServiceStatus).filter_by(
             service_name='EmailService'
@@ -561,7 +563,7 @@ def test_rule_preview():
         session_mgr = get_session_manager()
         test_session = session_mgr.create_session(session_id)
 
-        session = create_session(engine)
+        session = db_service.get_session()
 
         try:
             credential = session.query(EmailCredential).filter_by(id=credential_id).first()

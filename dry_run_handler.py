@@ -1,12 +1,14 @@
 import json
 import logging
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
-from Entities import DryRunRequest, DryRunResult, EmailRule, EmailCredential, RuleCondition, RuleAction
-from imap_client import IMAPClient
-from rule_engine import RuleEngine
+from DatabaseService import DryRunRequest, DryRunResult, EmailRule, EmailCredential, RuleCondition, RuleAction
+
+if TYPE_CHECKING:
+    from EMailService import IMAPClient, RuleEngine
 
 
 class DryRunHandler:
@@ -66,6 +68,7 @@ class DryRunHandler:
             if not credential:
                 raise ValueError(f"Credential {request.email_credential_id} not found")
 
+            from EMailService import IMAPClient
             imap_client = IMAPClient(credential, self.config, self.logger)
             imap_client.connect()
 
@@ -89,8 +92,10 @@ class DryRunHandler:
             request.processed_at = datetime.now()
             self.session.commit()
 
-    def _process_emails(self, request: DryRunRequest, rule: EmailRule, imap_client: IMAPClient) -> None:
+    def _process_emails(self, request: DryRunRequest, rule: EmailRule, imap_client: 'IMAPClient') -> None:
         """Process emails for dry-run evaluation."""
+        from EMailService import RuleEngine
+
         conditions = self.session.query(RuleCondition).filter_by(rule_id=rule.id).all()
         actions = self.session.query(RuleAction).filter_by(rule_id=rule.id).all()
 

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from Entities import ServiceStatus
+from DatabaseService import ServiceStatus
 
 
 class ServiceManager:
