@@ -77,6 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.2-pre] - 2026-02-05
+
+### Fixed
+- update WebService imports after refactoring consolidation (#9)
+
+
 ## [1.5.1-pre] - 2026-02-05
 
 ### Fixed
