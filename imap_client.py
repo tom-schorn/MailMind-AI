@@ -82,7 +82,7 @@ class IMAPClient:
         List all IMAP folders.
 
         Returns:
-            List of folder dicts: [{'name': 'INBOX', 'flags': [...], 'delimiter': '/'}, ...]
+            List of folder dicts: [{'name': 'INBOX', 'flags': [...], 'delim': '/'}, ...]
         """
         if not self.connected:
             raise ConnectionError("Not connected to IMAP server")
@@ -93,7 +93,7 @@ class IMAPClient:
                 folders.append({
                     'name': folder.name,
                     'flags': folder.flags,
-                    'delimiter': folder.delimiter
+                    'delim': folder.delim
                 })
             self.logger.debug(f"Found {len(folders)} folders")
             return folders
