@@ -1178,8 +1178,10 @@ class EMailService:
                 client_key = f"{credential.id}_{folder}"
                 self.imap_clients[client_key] = imap_client
 
-                unseen_uids = imap_client.get_unseen_uids(folder)
-                for uid in unseen_uids:
+                # Process all existing emails on startup (skip already processed ones)
+                all_uids = imap_client.get_all_uids(folder)
+                self.logger.info(f"Processing {len(all_uids)} existing emails in {folder}")
+                for uid in all_uids:
                     self._process_new_email(uid, credential.id, folder)
 
                 def callback(uid: str):
