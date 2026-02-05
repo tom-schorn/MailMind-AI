@@ -77,6 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0-pre] - 2026-02-05
+
+### Added
+- add configurable folder monitoring and dynamic folder selection
+
+
 ## [1.1.0-pre] - 2026-02-05
 
 ### Added
