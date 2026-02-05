@@ -121,6 +121,17 @@ class ProcessedEmail(Base):
     rules_applied: Mapped[str] = mapped_column(Text, nullable=True)
 
 
+class EmailRuleApplication(Base):
+    __tablename__ = "emailruleapplication"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email_credential_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailcredential.id'), nullable=False)
+    rule_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailrule.id'), nullable=False)
+    email_uid: Mapped[str] = mapped_column(String(100), nullable=False)
+    applied_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
+    actions_taken: Mapped[str] = mapped_column(Text, nullable=True)
+
+
 class DatabaseVersion(Base):
     __tablename__ = "databaseversion"
 
@@ -136,7 +147,7 @@ class DatabaseMigrator:
     def __init__(self, session: Session, logger: logging.Logger):
         self.session = session
         self.logger = logger
-        self.current_version = "1.1.0"
+        self.current_version = "1.2.0"
 
     def get_db_version(self) -> str:
         """Get current database version."""
@@ -174,6 +185,10 @@ class DatabaseMigrator:
 
         if db_version == "1.0.0":
             self._migrate_1_0_0_to_1_1_0()
+            db_version = "1.1.0"
+
+        if db_version == "1.1.0":
+            self._migrate_1_1_0_to_1_2_0()
 
         self.logger.info(f"Migration completed: {db_version} -> {self.current_version}")
 
@@ -210,6 +225,39 @@ class DatabaseMigrator:
             self.session.commit()
 
             self.logger.info("Migration 1.0.0 -> 1.1.0 completed successfully")
+
+        except Exception as e:
+            self.session.rollback()
+            self.logger.error(f"Migration failed: {e}")
+            raise
+
+    def _migrate_1_1_0_to_1_2_0(self) -> None:
+        """Migrate from v1.1.0 to v1.2.0 (add per-rule email tracking)."""
+        self.logger.info("Running migration 1.1.0 -> 1.2.0")
+
+        try:
+            self.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS emailruleapplication (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email_credential_id INTEGER NOT NULL,
+                    rule_id INTEGER NOT NULL,
+                    email_uid VARCHAR(100) NOT NULL,
+                    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    actions_taken TEXT,
+                    FOREIGN KEY (email_credential_id) REFERENCES emailcredential (id),
+                    FOREIGN KEY (rule_id) REFERENCES emailrule (id)
+                )
+            """))
+            self.logger.info("Created emailruleapplication table")
+
+            version_record = DatabaseVersion(
+                version="1.2.0",
+                description="Add per-rule email tracking with EmailRuleApplication table"
+            )
+            self.session.add(version_record)
+            self.session.commit()
+
+            self.logger.info("Migration 1.1.0 -> 1.2.0 completed successfully")
 
         except Exception as e:
             self.session.rollback()
