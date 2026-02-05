@@ -234,9 +234,9 @@ def get_folders(credential_id):
             return jsonify({'error': 'Credential not found'}), 404
 
         config = load_config()
-        from logger_config import setup_logging
-        logger = setup_logging(config)
-        from imap_client import IMAPClient
+        from LoggingService import LoggingService
+        logger = LoggingService.setup(config)
+        from EMailService import IMAPClient
 
         imap_client = IMAPClient(credential, config, logger)
         imap_client.connect()
@@ -617,9 +617,8 @@ def service_status():
 @app.route('/rules/test-preview', methods=['POST'])
 def test_rule_preview():
     """Test rule preview without saving."""
-    from imap_client import IMAPClient, EmailMessage
-    from rule_engine import RuleEngine, ConditionEvaluator
-    from logger_config import setup_logging
+    from EMailService import IMAPClient, EmailMessage, RuleEngine, ConditionEvaluator
+    from LoggingService import LoggingService
     from datetime import datetime
     import uuid
 
@@ -643,7 +642,7 @@ def test_rule_preview():
                 return jsonify({'error': 'Credential not found'}), 404
 
             config = load_config()
-            logger = setup_logging(config)
+            logger = LoggingService.setup(config)
 
             imap_client = IMAPClient(credential, config, logger)
             imap_client.connect()
