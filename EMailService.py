@@ -865,19 +865,6 @@ class EMailService:
         db_service = DatabaseService(db_url)
         db_service.init_db()
         db_service.run_migrations(self.logger)
-        
-
-        migration_session = sessionmaker(bind=self.engine)()
-        try:
-            from db_migrations import DatabaseMigrator
-            migrator = DatabaseMigrator(migration_session, self.logger)
-            if migrator.needs_migration():
-                self.logger.info("Database migration needed, running migrations...")
-                migrator.migrate()
-            else:
-                self.logger.info("Database is up to date")
-        finally:
-            migration_session.close()
 
         self.session_factory = sessionmaker(bind=self.engine)
 
