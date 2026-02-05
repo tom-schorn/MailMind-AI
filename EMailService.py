@@ -16,7 +16,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from config_manager import load_config
 from LoggingService import LoggingService
 from utils import get_database_url
-from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, ProcessedEmail
+from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, ProcessedEmail, EmailRuleApplication
 
 
 @dataclass
@@ -754,15 +754,6 @@ class EmailProcessor:
         """
         self.logger.info(f"Processing email {email.uid} from {email.sender}")
 
-        if self._is_already_processed(email.uid, credential_id):
-            self.logger.info(f"Email {email.uid} already processed, skipping")
-            return ProcessingResult(
-                email_uid=email.uid,
-                rules_matched=[],
-                actions_taken=[],
-                errors=["Email already processed"]
-            )
-
         enabled_rules = self._load_enabled_rules(credential_id)
         self.logger.debug(f"Found {len(enabled_rules)} enabled rules for credential {credential_id}")
 
@@ -772,6 +763,10 @@ class EmailProcessor:
 
         for rule in enabled_rules:
             try:
+                if self._is_already_processed(email.uid, credential_id, rule.id):
+                    self.logger.debug(f"Email {email.uid} already processed by rule '{rule.name}', skipping")
+                    continue
+
                 conditions = self._load_conditions(rule.id)
                 matched, details = self.rule_engine.evaluate_rule(email, rule, conditions)
 
@@ -783,12 +778,12 @@ class EmailProcessor:
                     action_logs = self.rule_engine.execute_actions(email, actions, dry_run=False)
                     actions_taken.extend(action_logs)
 
+                    self._mark_as_processed(email.uid, credential_id, rule.id, json.dumps(action_logs))
+
             except Exception as e:
                 error_msg = f"Error processing rule {rule.name}: {e}"
                 self.logger.error(error_msg)
                 errors.append(error_msg)
-
-        self._mark_as_processed(email.uid, credential_id, rules_matched)
 
         result = ProcessingResult(
             email_uid=email.uid,
@@ -800,11 +795,12 @@ class EmailProcessor:
         self.logger.info(f"Completed processing email {email.uid}: {len(rules_matched)} rules matched")
         return result
 
-    def _is_already_processed(self, email_uid: str, credential_id: int) -> bool:
-        """Check if email has already been processed."""
-        existing = self.session.query(ProcessedEmail).filter_by(
+    def _is_already_processed(self, email_uid: str, credential_id: int, rule_id: int) -> bool:
+        """Check if email has already been processed by a specific rule."""
+        existing = self.session.query(EmailRuleApplication).filter_by(
             email_uid=email_uid,
-            email_credential_id=credential_id
+            email_credential_id=credential_id,
+            rule_id=rule_id
         ).first()
 
         return existing is not None
@@ -828,20 +824,21 @@ class EmailProcessor:
             rule_id=rule_id
         ).all()
 
-    def _mark_as_processed(self, email_uid: str, credential_id: int, rules_applied: list[int]) -> None:
-        """Mark email as processed in database."""
+    def _mark_as_processed(self, email_uid: str, credential_id: int, rule_id: int, actions_taken: str) -> None:
+        """Mark email as processed by a specific rule."""
         try:
-            processed = ProcessedEmail(
+            application = EmailRuleApplication(
                 email_uid=email_uid,
                 email_credential_id=credential_id,
-                processed_at=datetime.now(),
-                rules_applied=json.dumps(rules_applied)
+                rule_id=rule_id,
+                applied_at=datetime.now(),
+                actions_taken=actions_taken
             )
 
-            self.session.add(processed)
+            self.session.add(application)
             self.session.commit()
 
-            self.logger.debug(f"Marked email {email_uid} as processed")
+            self.logger.debug(f"Marked email {email_uid} as processed by rule {rule_id}")
 
         except Exception as e:
             self.logger.error(f"Failed to mark email as processed: {e}")
