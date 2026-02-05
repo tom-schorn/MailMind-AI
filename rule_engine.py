@@ -234,13 +234,23 @@ class RuleEngine:
 
         if action_type == 'move_to_folder':
             target_folder = action.folder or action.action_value
+
             if not dry_run:
+                if not self.imap.folder_exists(target_folder):
+                    self.logger.info(f"Folder '{target_folder}' does not exist, creating...")
+                    self.imap.create_folder(target_folder)
+
                 self.imap.move_to_folder(email.uid, target_folder)
             return f"move_to_folder: {target_folder}"
 
         elif action_type == 'copy_to_folder':
             target_folder = action.folder or action.action_value
+
             if not dry_run:
+                if not self.imap.folder_exists(target_folder):
+                    self.logger.info(f"Folder '{target_folder}' does not exist, creating...")
+                    self.imap.create_folder(target_folder)
+
                 self.imap.copy_to_folder(email.uid, target_folder)
             return f"copy_to_folder: {target_folder}"
 

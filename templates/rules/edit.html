@@ -29,6 +29,16 @@
               </select>
             </div>
 
+            <div class="col-md-12">
+              <label for="monitored_folder" class="form-label">Monitored Folder</label>
+              <select class="form-select" id="monitored_folder" name="monitored_folder" required>
+                <option value="{{ rule.monitored_folder if rule.monitored_folder else 'INBOX' }}" selected>
+                  {{ rule.monitored_folder if rule.monitored_folder else 'INBOX' }}
+                </option>
+              </select>
+              <div class="form-text">Select which folder to monitor for new emails</div>
+            </div>
+
             <div class="col-md-8">
               <label for="name" class="form-label">Rule Name</label>
               <input type="text" class="form-control" id="name" name="name" value="{{ rule.name }}" required>
@@ -449,5 +459,34 @@ function testRule() {
     document.getElementById('test-error').textContent = 'Error: ' + error.message;
   });
 }
+
+// Load folders on page load
+const credentialId = {{ rule.email_credential_id }};
+const currentFolder = "{{ rule.monitored_folder if rule.monitored_folder else 'INBOX' }}";
+
+fetch(`/api/folders/${credentialId}`)
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) {
+      console.error('Error loading folders:', data.error);
+      return;
+    }
+
+    const folderSelect = document.getElementById('monitored_folder');
+    folderSelect.innerHTML = '';
+
+    data.folders.forEach(folder => {
+      if (folder.selectable) {
+        const option = document.createElement('option');
+        option.value = folder.name;
+        option.textContent = folder.name;
+        if (folder.name === currentFolder) {
+          option.selected = true;
+        }
+        folderSelect.appendChild(option);
+      }
+    });
+  })
+  .catch(err => console.error('Error loading folders:', err));
 </script>
 {% endblock %}

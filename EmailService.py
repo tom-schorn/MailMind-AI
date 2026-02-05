@@ -29,6 +29,18 @@ class EmailService:
         self.engine = create_engine(db_url)
         init_db(self.engine)
 
+        migration_session = sessionmaker(bind=self.engine)()
+        try:
+            from db_migrations import DatabaseMigrator
+            migrator = DatabaseMigrator(migration_session, self.logger)
+            if migrator.needs_migration():
+                self.logger.info("Database migration needed, running migrations...")
+                migrator.migrate()
+            else:
+                self.logger.info("Database is up to date")
+        finally:
+            migration_session.close()
+
         self.session_factory = sessionmaker(bind=self.engine)
 
         self.service_manager = ServiceManager(
@@ -37,7 +49,7 @@ class EmailService:
             "EmailService"
         )
 
-        self.imap_clients: Dict[int, IMAPClient] = {}
+        self.imap_clients: Dict[str, IMAPClient] = {}
         self.stop_event = threading.Event()
         self.threads = []
 
@@ -127,12 +139,56 @@ class EmailService:
     def _email_watcher_loop(self, credential: EmailCredential) -> None:
         """
         Email watcher loop for a single credential.
+        Starts separate watchers for each monitored folder.
 
         Args:
             credential: EmailCredential to watch
         """
         self.logger.info(f"Starting email watcher for {credential.email_address}")
 
+        session = self.session_factory()
+        try:
+            from Entities import EmailRule
+            rules = session.query(EmailRule).filter_by(
+                email_credential_id=credential.id,
+                enabled=True
+            ).all()
+
+            monitored_folders = set()
+            for rule in rules:
+                folder = rule.monitored_folder if hasattr(rule, 'monitored_folder') and rule.monitored_folder else 'INBOX'
+                monitored_folders.add(folder)
+
+            if not monitored_folders:
+                monitored_folders.add('INBOX')
+
+            self.logger.info(f"Monitoring {len(monitored_folders)} folders: {monitored_folders}")
+        finally:
+            session.close()
+
+        folder_threads = []
+        for folder in monitored_folders:
+            folder_thread = threading.Thread(
+                target=self._folder_watcher,
+                args=(credential, folder),
+                daemon=True,
+                name=f"Watcher-{credential.email_address}-{folder}"
+            )
+            folder_thread.start()
+            folder_threads.append(folder_thread)
+
+        for thread in folder_threads:
+            thread.join()
+
+    def _folder_watcher(self, credential: EmailCredential, folder: str) -> None:
+        """
+        Watch a single folder for a credential.
+
+        Args:
+            credential: EmailCredential to watch
+            folder: Folder name to monitor
+        """
+        self.logger.info(f"Starting folder watcher for {credential.email_address}/{folder}")
         reconnect_delay = self.config.get('service', {}).get('imap_reconnect_delay', 30)
 
         while not self.stop_event.is_set():
@@ -140,46 +196,54 @@ class EmailService:
                 imap_client = IMAPClient(credential, self.config, self.logger)
                 imap_client.connect()
 
-                self.imap_clients[credential.id] = imap_client
+                client_key = f"{credential.id}_{folder}"
+                self.imap_clients[client_key] = imap_client
 
-                unseen_uids = imap_client.get_unseen_uids()
+                unseen_uids = imap_client.get_unseen_uids(folder)
                 for uid in unseen_uids:
-                    self._process_new_email(uid, credential.id)
+                    self._process_new_email(uid, credential.id, folder)
 
                 def callback(uid: str):
-                    self._process_new_email(uid, credential.id)
+                    self._process_new_email(uid, credential.id, folder)
 
                 def stop_check():
                     return self.stop_event.is_set()
 
-                imap_client.watch(callback, stop_check)
+                imap_client.watch(callback, stop_check, folder)
 
             except Exception as e:
-                self.logger.error(f"Error in email watcher for {credential.email_address}: {e}")
+                self.logger.error(f"Error in folder watcher for {folder}: {e}")
                 time.sleep(reconnect_delay)
 
             finally:
-                if credential.id in self.imap_clients:
+                client_key = f"{credential.id}_{folder}"
+                if client_key in self.imap_clients:
                     try:
-                        self.imap_clients[credential.id].disconnect()
-                        del self.imap_clients[credential.id]
+                        self.imap_clients[client_key].disconnect()
+                        del self.imap_clients[client_key]
                     except:
                         pass
 
-    def _process_new_email(self, uid: str, credential_id: int) -> None:
+    def _process_new_email(self, uid: str, credential_id: int, folder: str = 'INBOX') -> None:
         """
         Process a new email.
 
         Args:
             uid: Email UID
             credential_id: Email credential ID
+            folder: Folder where email was found
         """
         session = self.session_factory()
 
         try:
-            imap_client = self.imap_clients.get(credential_id)
+            client_key = f"{credential_id}_{folder}"
+            imap_client = self.imap_clients.get(client_key)
+
             if not imap_client:
-                self.logger.warning(f"No IMAP client for credential {credential_id}")
+                imap_client = self.imap_clients.get(credential_id)
+
+            if not imap_client:
+                self.logger.warning(f"No IMAP client for credential {credential_id}/{folder}")
                 return
 
             email = imap_client.fetch_email(uid)
@@ -193,12 +257,12 @@ class EmailService:
             self.service_manager.increment_rules_executed()
 
             self.logger.info(
-                f"Email {uid} processed: {len(result.rules_matched)} rules matched, "
+                f"Email {uid} from {folder} processed: {len(result.rules_matched)} rules matched, "
                 f"{len(result.actions_taken)} actions taken"
             )
 
         except Exception as e:
-            self.logger.error(f"Error processing email {uid}: {e}")
+            self.logger.error(f"Error processing email {uid} from {folder}: {e}")
 
         finally:
             session.close()

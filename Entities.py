@@ -33,6 +33,7 @@ class EmailRule(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     condition: Mapped[str] = mapped_column(Text, nullable=False)
     actions: Mapped[str] = mapped_column(Text, nullable=False)
+    monitored_folder: Mapped[str] = mapped_column(String(200), nullable=False, default='INBOX')
 
     created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
     changed_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp(), onupdate=func.current_timestamp())
@@ -117,6 +118,15 @@ class ProcessedEmail(Base):
     email_uid: Mapped[str] = mapped_column(String(100), nullable=False)
     processed_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
     rules_applied: Mapped[str] = mapped_column(Text, nullable=True)
+
+
+class DatabaseVersion(Base):
+    __tablename__ = "databaseversion"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
+    applied_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
+    description: Mapped[str] = mapped_column(String(255), nullable=True)
 
 
 def create_session(engine) -> Session:

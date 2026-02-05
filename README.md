@@ -5,6 +5,10 @@ Docker-based E-Mail Agent that monitors IMAP inbox and analyzes incoming emails 
 ## Features
 
 - IMAP connection with IDLE support (polling fallback)
+- Multi-folder monitoring: watch different folders per rule
+- Configurable monitored folder per email rule
+- Automatic folder creation for move/copy actions
+- Dynamic folder selection in web UI
 - Step-by-step spam analysis workflow with early exit
 - Spam category detection: phishing, scam, malware, adult
 - Automatic sorting into category subfolders
@@ -12,6 +16,7 @@ Docker-based E-Mail Agent that monitors IMAP inbox and analyzes incoming emails 
 - Configurable sensitivity and AI model
 - Structured console output with status icons
 - All configuration via environment variables
+- Automatic database migrations
 
 ## Quick Start
 

@@ -30,6 +30,14 @@
               </select>
             </div>
 
+            <div class="col-md-12">
+              <label for="monitored_folder" class="form-label">Monitored Folder</label>
+              <select class="form-select" id="monitored_folder" name="monitored_folder" required>
+                <option value="INBOX" selected>INBOX (loading...)</option>
+              </select>
+              <div class="form-text">Select which folder to monitor for new emails</div>
+            </div>
+
             <div class="col-md-8">
               <label for="name" class="form-label">Rule Name</label>
               <input type="text" class="form-control" id="name" name="name" required>
@@ -317,6 +325,53 @@ document.addEventListener('DOMContentLoaded', function() {
     toggleActionFields(select);
   });
 });
+
+// Load folders when account is selected
+document.getElementById('email_account_id').addEventListener('change', function() {
+  const credentialId = this.value;
+  const folderSelect = document.getElementById('monitored_folder');
+
+  if (!credentialId) {
+    folderSelect.innerHTML = '<option value="INBOX">INBOX (default)</option>';
+    return;
+  }
+
+  folderSelect.innerHTML = '<option value="INBOX">INBOX (loading...)</option>';
+
+  fetch(`/api/folders/${credentialId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        console.error('Error loading folders:', data.error);
+        alert('Failed to load folders: ' + data.error);
+        folderSelect.innerHTML = '<option value="INBOX">INBOX (error)</option>';
+        return;
+      }
+
+      folderSelect.innerHTML = '';
+      data.folders.forEach(folder => {
+        if (folder.selectable) {
+          const option = document.createElement('option');
+          option.value = folder.name;
+          option.textContent = folder.name;
+          if (folder.name === 'INBOX') {
+            option.selected = true;
+          }
+          folderSelect.appendChild(option);
+        }
+      });
+    })
+    .catch(err => {
+      console.error('Error loading folders:', err);
+      alert('Failed to load folders');
+      folderSelect.innerHTML = '<option value="INBOX">INBOX (error)</option>';
+    });
+});
+
+// Trigger initial load if account already selected
+if (document.getElementById('email_account_id').value) {
+  document.getElementById('email_account_id').dispatchEvent(new Event('change'));
+}
 
 function testRule() {
   const credentialId = document.getElementById('email_account_id').value;

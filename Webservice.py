@@ -148,6 +148,47 @@ def list_rules():
         session.close()
 
 
+@app.route('/api/folders/<int:credential_id>')
+def get_folders(credential_id):
+    """Get list of available IMAP folders for a credential."""
+    session = create_session(engine)
+    try:
+        credential = session.query(EmailCredential).filter_by(id=credential_id).first()
+        if not credential:
+            return jsonify({'error': 'Credential not found'}), 404
+
+        config = load_config()
+        from logger_config import setup_logging
+        logger = setup_logging(config)
+        from imap_client import IMAPClient
+
+        imap_client = IMAPClient(credential, config, logger)
+        imap_client.connect()
+
+        try:
+            folders = imap_client.list_folders()
+
+            folder_list = [
+                {
+                    'name': f['name'],
+                    'selectable': '\\Noselect' not in f['flags']
+                }
+                for f in folders
+            ]
+
+            return jsonify({
+                'status': 'success',
+                'folders': folder_list
+            })
+        finally:
+            imap_client.disconnect()
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
 @app.route('/rules/add', methods=['GET', 'POST'])
 def add_rule():
     if request.method == 'POST':
@@ -159,7 +200,8 @@ def add_rule():
                 name=request.form['name'],
                 enabled='enabled' in request.form,
                 condition=request.form.get('logic', 'AND'),
-                actions=''  # Not used, but required
+                actions='',  # Not used, but required
+                monitored_folder=request.form.get('monitored_folder', 'INBOX')
             )
             session.add(rule)
             session.flush()  # Get rule.id
@@ -225,6 +267,7 @@ def edit_rule(id):
             rule.name = request.form['name']
             rule.enabled = 'enabled' in request.form
             rule.condition = request.form.get('logic', 'AND')
+            rule.monitored_folder = request.form.get('monitored_folder', 'INBOX')
 
             # Delete existing conditions and actions
             session.query(RuleCondition).filter_by(rule_id=rule.id).delete()

@@ -77,6 +77,65 @@ class IMAPClient:
             except Exception as e:
                 self.logger.error(f"Error during disconnect: {e}")
 
+    def list_folders(self) -> list[dict]:
+        """
+        List all IMAP folders.
+
+        Returns:
+            List of folder dicts: [{'name': 'INBOX', 'flags': [...], 'delimiter': '/'}, ...]
+        """
+        if not self.connected:
+            raise ConnectionError("Not connected to IMAP server")
+
+        try:
+            folders = []
+            for folder in self.mailbox.folder.list():
+                folders.append({
+                    'name': folder.name,
+                    'flags': folder.flags,
+                    'delimiter': folder.delimiter
+                })
+            self.logger.debug(f"Found {len(folders)} folders")
+            return folders
+        except Exception as e:
+            self.logger.error(f"Failed to list folders: {e}")
+            raise
+
+    def create_folder(self, folder_name: str) -> bool:
+        """
+        Create IMAP folder if it doesn't exist.
+
+        Args:
+            folder_name: Folder path (e.g., 'INBOX/Processed')
+
+        Returns:
+            True if created or already exists
+        """
+        if not self.connected:
+            raise ConnectionError("Not connected to IMAP server")
+
+        try:
+            existing_folders = [f['name'] for f in self.list_folders()]
+            if folder_name in existing_folders:
+                self.logger.debug(f"Folder '{folder_name}' already exists")
+                return True
+
+            self.mailbox.folder.create(folder_name)
+            self.logger.info(f"Created folder '{folder_name}'")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to create folder '{folder_name}': {e}")
+            raise
+
+    def folder_exists(self, folder_name: str) -> bool:
+        """Check if folder exists."""
+        try:
+            existing_folders = [f['name'] for f in self.list_folders()]
+            return folder_name in existing_folders
+        except Exception as e:
+            self.logger.error(f"Failed to check folder existence: {e}")
+            return False
+
     def fetch_email(self, uid: str) -> EmailMessage:
         """
         Fetch and parse a single email by UID.
@@ -243,13 +302,14 @@ class IMAPClient:
             self.logger.error(f"Failed to delete email {uid}: {e}")
             raise
 
-    def watch(self, callback: Callable, stop_check: Callable) -> None:
+    def watch(self, callback: Callable, stop_check: Callable, folder: str = "INBOX") -> None:
         """
         Watch for new emails using IDLE or polling.
 
         Args:
             callback: Function to call with new email UID
             stop_check: Function returning True when watching should stop
+            folder: Folder to monitor (default: INBOX)
         """
         if not self.connected:
             raise ConnectionError("Not connected to IMAP server")
@@ -261,25 +321,25 @@ class IMAPClient:
 
         try:
             if use_idle:
-                self._watch_idle(callback, stop_check)
+                self._watch_idle(callback, stop_check, folder)
             else:
-                self._watch_polling(callback, stop_check, poll_interval)
+                self._watch_polling(callback, stop_check, folder, poll_interval)
 
         except Exception as e:
             self.logger.error(f"Error in watch loop: {e}")
             raise
 
-    def _watch_idle(self, callback: Callable, stop_check: Callable) -> None:
+    def _watch_idle(self, callback: Callable, stop_check: Callable, folder: str = 'INBOX') -> None:
         """Watch using IMAP IDLE command."""
-        self.mailbox.folder.set('INBOX')
-        last_uids = set(self.get_all_uids())
+        self.mailbox.folder.set(folder)
+        last_uids = set(self.get_all_uids(folder))
 
         while not stop_check():
             try:
                 responses = self.mailbox.idle.wait(timeout=30)
 
                 if responses:
-                    current_uids = set(self.get_all_uids())
+                    current_uids = set(self.get_all_uids(folder))
                     new_uids = current_uids - last_uids
 
                     for uid in new_uids:
@@ -292,16 +352,16 @@ class IMAPClient:
                 self.logger.error(f"Error in IDLE watch: {e}")
                 time.sleep(5)
 
-    def _watch_polling(self, callback: Callable, stop_check: Callable, interval: int) -> None:
+    def _watch_polling(self, callback: Callable, stop_check: Callable, folder: str = 'INBOX', interval: int = 60) -> None:
         """Watch using polling."""
-        self.mailbox.folder.set('INBOX')
-        last_uids = set(self.get_all_uids())
+        self.mailbox.folder.set(folder)
+        last_uids = set(self.get_all_uids(folder))
 
         while not stop_check():
             try:
                 time.sleep(interval)
 
-                current_uids = set(self.get_all_uids())
+                current_uids = set(self.get_all_uids(folder))
                 new_uids = current_uids - last_uids
 
                 for uid in new_uids:

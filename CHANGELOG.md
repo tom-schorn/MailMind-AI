@@ -77,11 +77,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.0-pre] - 2026-02-04
+## [1.1.0-pre] - 2026-02-05
 
 ### Added
-- add Docker data volume and environment variable override
+- Configurable monitored folder per email rule (previously hardcoded to INBOX)
+- Dynamic folder selection in rule creation/edit UI via API endpoint
+- Automatic folder creation for move/copy actions if folder doesn't exist
+- Multi-folder watching: separate IMAP watcher thread per monitored folder
+- Automatic database migration system with version tracking
+- New `DatabaseVersion` entity for migration history
+- API endpoint `/api/folders/<credential_id>` to fetch available IMAP folders
+- IMAP client methods: `list_folders()`, `create_folder()`, `folder_exists()`
+- Docker data volume and environment variable override
 
+### Changed
+- `EmailRule` entity now includes `monitored_folder` field (default: INBOX)
+- Email service now spawns one watcher thread per unique monitored folder
+- IMAP watch methods now accept `folder` parameter for dynamic folder monitoring
+- Rule engine auto-creates target folders before move/copy actions (in production mode only)
+
+### Migration
+- Database automatically migrates from v1.0.0 to v1.1.0 on first service start
+- Adds `monitored_folder` column to `emailrule` table with default value 'INBOX'
+- Creates `databaseversion` table for future migration tracking
+- Existing rules are preserved with default folder 'INBOX'
 
 ## [1.0.1-pre] - 2026-02-04
 
