@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Logs - {{ account.email_address }} - MailMind AI{% endblock %}
+
+{% block page_title %}Account Logs{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('list_accounts') }}">Email Accounts</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('account_dashboard', id=account.id) }}">{{ account.email_address }}</a></li>
+<li class="breadcrumb-item active">Logs</li>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+
+  <div class="row">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Service Logs - {{ account.email_address }}</h5>
+
+          <div class="row g-2 mb-3 align-items-end">
+            <div class="col-md-2">
+              <label for="log-level-filter" class="form-label">Level</label>
+              <select class="form-select form-select-sm" id="log-level-filter">
+                <option value="">All</option>
+                <option value="DEBUG">DEBUG</option>
+                <option value="INFO">INFO</option>
+                <option value="WARNING">WARNING</option>
+                <option value="ERROR">ERROR</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label for="log-search-filter" class="form-label">Search</label>
+              <input type="text" class="form-control form-control-sm" id="log-search-filter" placeholder="Filter messages...">
+            </div>
+            <div class="col-md-6">
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-primary" onclick="refreshLogs()">
+                  <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+                <div class="form-check form-switch d-flex align-items-center">
+                  <input class="form-check-input" type="checkbox" id="auto-refresh-toggle" checked>
+                  <label class="form-check-label ms-2" for="auto-refresh-toggle">Auto-Refresh</label>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary" onclick="exportLogs('csv')">
+                  <i class="bi bi-filetype-csv"></i> CSV
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="exportLogs('jsonl')">
+                  <i class="bi bi-filetype-json"></i> JSONL
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+            <table class="table table-sm table-hover" id="log-table">
+              <thead class="table-light" style="position: sticky; top: 0;">
+                <tr>
+                  <th style="width: 160px;">Timestamp</th>
+                  <th style="width: 80px;">Level</th>
+                  <th style="width: 100px;">Logger</th>
+                  <th>Message</th>
+                </tr>
+              </thead>
+              <tbody id="log-tbody">
+                <tr>
+                  <td colspan="4" class="text-center text-muted">Loading logs...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const accountEmail = "{{ account.email_address }}";
+let autoRefreshInterval = null;
+
+function getLevelBadge(level) {
+  const classes = {
+    'ERROR': 'bg-danger',
+    'WARNING': 'bg-warning text-dark',
+    'INFO': 'bg-info text-dark',
+    'DEBUG': 'bg-secondary'
+  };
+  return `<span class="badge ${classes[level] || 'bg-light text-dark'}">${level}</span>`;
+}
+
+function refreshLogs() {
+  const level = document.getElementById('log-level-filter').value;
+  const search = document.getElementById('log-search-filter').value;
+
+  const params = new URLSearchParams();
+  if (level) params.append('level', level);
+  if (search) params.append('search', search);
+  params.append('account', accountEmail);
+  params.append('limit', '500');
+
+  fetch(`/api/logs?${params}`)
+    .then(r => r.json())
+    .then(data => {
+      const tbody = document.getElementById('log-tbody');
+
+      if (!data.entries || data.entries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No log entries found.</td></tr>';
+        return;
+      }
+
+      const entries = data.entries.reverse();
+      let html = '';
+      entries.forEach(entry => {
+        html += `<tr>
+          <td><small>${entry.timestamp}</small></td>
+          <td>${getLevelBadge(entry.level)}</td>
+          <td><small class="text-muted">${entry.logger}</small></td>
+          <td><small>${entry.message}</small></td>
+        </tr>`;
+      });
+      tbody.innerHTML = html;
+    })
+    .catch(err => {
+      console.error('Error loading logs:', err);
+    });
+}
+
+function exportLogs(format) {
+  const level = document.getElementById('log-level-filter').value;
+  const search = document.getElementById('log-search-filter').value;
+
+  const params = new URLSearchParams();
+  if (level) params.append('level', level);
+  if (search) params.append('search', search);
+  params.append('account', accountEmail);
+
+  window.location.href = `/api/logs/export/${format}?${params}`;
+}
+
+function toggleAutoRefresh() {
+  const enabled = document.getElementById('auto-refresh-toggle').checked;
+  if (enabled) {
+    autoRefreshInterval = setInterval(refreshLogs, 3000);
+  } else {
+    if (autoRefreshInterval) {
+      clearInterval(autoRefreshInterval);
+      autoRefreshInterval = null;
+    }
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  refreshLogs();
+  autoRefreshInterval = setInterval(refreshLogs, 3000);
+
+  document.getElementById('auto-refresh-toggle').addEventListener('change', toggleAutoRefresh);
+  document.getElementById('log-level-filter').addEventListener('change', refreshLogs);
+
+  let searchTimeout;
+  document.getElementById('log-search-filter').addEventListener('input', function() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(refreshLogs, 300);
+  });
+});
+</script>
+{% endblock %}

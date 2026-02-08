@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, DatabaseService
-from DatabaseService import DryRunRequest, DryRunResult, ServiceStatus, Label
+from DatabaseService import DryRunRequest, DryRunResult, ServiceStatus, Label, ProcessedEmail, EmailRuleApplication
 import os
 import re
 import json
@@ -214,13 +214,463 @@ def delete_account(id):
     return redirect(url_for('list_accounts'))
 
 
-# Email Rules Management
-@app.route('/rules')
-def list_rules():
+# Account Dashboard & Scoped Routes
+@app.route('/accounts/<int:id>')
+def account_dashboard(id):
     session = db_service.get_session()
     try:
-        rules = session.query(EmailRule).all()
-        return render_template('rules/list.html', rules=rules)
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        rules_count = session.query(EmailRule).filter_by(email_credential_id=id).count()
+        labels_count = session.query(Label).filter_by(credential_id=id).count()
+
+        service_status = session.query(ServiceStatus).filter_by(
+            service_name='EmailService'
+        ).first()
+
+        recent_activity = session.query(EmailRuleApplication).filter_by(
+            email_credential_id=id
+        ).order_by(EmailRuleApplication.applied_at.desc()).limit(5).all()
+
+        return render_template('accounts/dashboard.html',
+                             account=account,
+                             rules_count=rules_count,
+                             labels_count=labels_count,
+                             service_status=service_status,
+                             recent_activity=recent_activity)
+    finally:
+        session.close()
+
+
+@app.route('/accounts/<int:id>/rules')
+def account_rules(id):
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        rules = session.query(EmailRule).filter_by(email_credential_id=id).all()
+        return render_template('accounts/rules/list.html', account=account, rules=rules)
+    finally:
+        session.close()
+
+
+@app.route('/accounts/<int:id>/rules/add', methods=['GET', 'POST'])
+def account_add_rule(id):
+    if request.method == 'POST':
+        session = db_service.get_session()
+        try:
+            account = session.query(EmailCredential).filter_by(id=id).first()
+            if not account:
+                flash('Account not found!', 'danger')
+                return redirect(url_for('list_accounts'))
+
+            rule = EmailRule(
+                email_credential_id=id,
+                name=request.form['name'],
+                enabled='enabled' in request.form,
+                condition=request.form.get('logic', 'AND'),
+                actions='',
+                monitored_folder=request.form.get('monitored_folder', 'INBOX')
+            )
+            session.add(rule)
+            session.flush()
+
+            condition_fields = [k for k in request.form.keys() if k.startswith('condition_field_')]
+            for field_key in condition_fields:
+                index = field_key.split('_')[-1]
+                condition = RuleCondition(
+                    rule_id=rule.id,
+                    field=request.form[f'condition_field_{index}'],
+                    operator=request.form[f'condition_operator_{index}'],
+                    value=request.form[f'condition_value_{index}']
+                )
+                session.add(condition)
+
+            action_types = [k for k in request.form.keys() if k.startswith('action_type_')]
+            for type_key in action_types:
+                index = type_key.split('_')[-1]
+                action_type = request.form[f'action_type_{index}']
+                action_value = request.form.get(f'action_value_{index}', '')
+
+                action = RuleAction(
+                    rule_id=rule.id,
+                    action_type=action_type,
+                    action_value=action_value,
+                    folder=action_value if action_type in ['move_to_folder', 'copy_to_folder'] else None,
+                    label=action_value if action_type == 'add_label' else None
+                )
+                session.add(action)
+
+            session.commit()
+            flash('Email rule added successfully!', 'success')
+            return redirect(url_for('account_rules', id=id))
+        except Exception as e:
+            session.rollback()
+            flash(f'Error adding rule: {str(e)}', 'danger')
+        finally:
+            session.close()
+
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+        return render_template('accounts/rules/add.html', account=account)
+    finally:
+        session.close()
+
+
+@app.route('/accounts/<int:id>/rules/edit/<int:rule_id>', methods=['GET', 'POST'])
+def account_edit_rule(id, rule_id):
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        rule = session.query(EmailRule).filter_by(id=rule_id, email_credential_id=id).first()
+        if not rule:
+            flash('Rule not found!', 'danger')
+            return redirect(url_for('account_rules', id=id))
+
+        if request.method == 'POST':
+            rule.name = request.form['name']
+            rule.enabled = 'enabled' in request.form
+            rule.condition = request.form.get('logic', 'AND')
+            rule.monitored_folder = request.form.get('monitored_folder', 'INBOX')
+
+            session.query(RuleCondition).filter_by(rule_id=rule.id).delete()
+            session.query(RuleAction).filter_by(rule_id=rule.id).delete()
+
+            condition_fields = [k for k in request.form.keys() if k.startswith('condition_field_')]
+            for field_key in condition_fields:
+                index = field_key.split('_')[-1]
+                condition = RuleCondition(
+                    rule_id=rule.id,
+                    field=request.form[f'condition_field_{index}'],
+                    operator=request.form[f'condition_operator_{index}'],
+                    value=request.form[f'condition_value_{index}']
+                )
+                session.add(condition)
+
+            action_types = [k for k in request.form.keys() if k.startswith('action_type_')]
+            for type_key in action_types:
+                index = type_key.split('_')[-1]
+                action_type = request.form[f'action_type_{index}']
+                action_value = request.form.get(f'action_value_{index}', '')
+
+                action = RuleAction(
+                    rule_id=rule.id,
+                    action_type=action_type,
+                    action_value=action_value,
+                    folder=action_value if action_type in ['move_to_folder', 'copy_to_folder'] else None,
+                    label=action_value if action_type == 'add_label' else None
+                )
+                session.add(action)
+
+            session.commit()
+            flash('Email rule updated successfully!', 'success')
+            return redirect(url_for('account_rules', id=id))
+
+        return render_template('accounts/rules/edit.html', account=account, rule=rule)
+    except Exception as e:
+        session.rollback()
+        flash(f'Error updating rule: {str(e)}', 'danger')
+        return redirect(url_for('account_rules', id=id))
+    finally:
+        session.close()
+
+
+@app.route('/accounts/<int:id>/rules/delete/<int:rule_id>', methods=['POST'])
+def account_delete_rule(id, rule_id):
+    session = db_service.get_session()
+    try:
+        rule = session.query(EmailRule).filter_by(id=rule_id, email_credential_id=id).first()
+        if rule:
+            session.query(RuleCondition).filter_by(rule_id=rule_id).delete()
+            session.query(RuleAction).filter_by(rule_id=rule_id).delete()
+            session.delete(rule)
+            session.commit()
+            flash('Email rule deleted successfully!', 'success')
+        else:
+            flash('Rule not found!', 'danger')
+    except Exception as e:
+        session.rollback()
+        flash(f'Error deleting rule: {str(e)}', 'danger')
+    finally:
+        session.close()
+
+    return redirect(url_for('account_rules', id=id))
+
+
+@app.route('/accounts/<int:id>/rules/test/<int:rule_id>', methods=['GET', 'POST'])
+def account_test_rule(id, rule_id):
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        rule = session.query(EmailRule).filter_by(id=rule_id, email_credential_id=id).first()
+        if not rule:
+            flash('Rule not found!', 'danger')
+            return redirect(url_for('account_rules', id=id))
+
+        if request.method == 'POST':
+            max_emails = int(request.form.get('max_emails', 10))
+
+            dry_run_request = DryRunRequest(
+                rule_id=rule.id,
+                email_credential_id=rule.email_credential_id,
+                status='pending',
+                max_emails=max_emails
+            )
+            session.add(dry_run_request)
+            session.commit()
+
+            flash(f'Dry-run test started for rule "{rule.name}"', 'info')
+            return redirect(url_for('account_test_results', id=id, request_id=dry_run_request.id))
+
+        return render_template('accounts/rules/test.html', account=account, rule=rule)
+    except Exception as e:
+        session.rollback()
+        flash(f'Error starting dry-run test: {str(e)}', 'danger')
+        return redirect(url_for('account_rules', id=id))
+    finally:
+        session.close()
+
+
+@app.route('/accounts/<int:id>/rules/test/results/<int:request_id>')
+def account_test_results(id, request_id):
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        dry_run_request = session.query(DryRunRequest).filter_by(id=request_id, email_credential_id=id).first()
+        if not dry_run_request:
+            flash('Dry-run request not found!', 'danger')
+            return redirect(url_for('account_rules', id=id))
+
+        results = session.query(DryRunResult).filter_by(request_id=request_id).all()
+
+        results_data = []
+        for result in results:
+            condition_results = json.loads(result.condition_results) if result.condition_results else {}
+            actions_would_apply = json.loads(result.actions_would_apply) if result.actions_would_apply else []
+
+            results_data.append({
+                'id': result.id,
+                'email_uid': result.email_uid,
+                'email_subject': result.email_subject,
+                'email_from': result.email_from,
+                'email_date': result.email_date,
+                'matched': result.matched,
+                'condition_results': condition_results,
+                'actions_would_apply': actions_would_apply
+            })
+
+        return render_template('accounts/rules/test_results.html',
+                             account=account,
+                             dry_run_request=dry_run_request,
+                             results=results_data)
+    finally:
+        session.close()
+
+
+@app.route('/accounts/<int:id>/rules/test/status/<int:request_id>')
+def account_dry_run_status(id, request_id):
+    """AJAX endpoint to check dry-run status."""
+    session = db_service.get_session()
+    try:
+        dry_run_request = session.query(DryRunRequest).filter_by(id=request_id, email_credential_id=id).first()
+        if not dry_run_request:
+            return jsonify({'error': 'Request not found'}), 404
+
+        result_count = session.query(DryRunResult).filter_by(request_id=request_id).count()
+
+        return jsonify({
+            'status': dry_run_request.status,
+            'result_count': result_count,
+            'processed_at': str(dry_run_request.processed_at) if dry_run_request.processed_at else None
+        })
+    finally:
+        session.close()
+
+
+# Account Labels
+@app.route('/accounts/<int:id>/labels')
+def account_labels(id):
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        labels = session.query(Label).filter_by(credential_id=id).all()
+        return render_template('accounts/labels/list.html', account=account, labels=labels)
+    finally:
+        session.close()
+
+
+@app.route('/accounts/<int:id>/labels/add', methods=['GET', 'POST'])
+def account_add_label(id):
+    if request.method == 'POST':
+        session = db_service.get_session()
+        try:
+            account = session.query(EmailCredential).filter_by(id=id).first()
+            if not account:
+                flash('Account not found!', 'danger')
+                return redirect(url_for('list_accounts'))
+
+            label = Label(
+                credential_id=id,
+                name=request.form['name'],
+                color=request.form.get('color', '#0d6efd'),
+                is_imap_flag=False
+            )
+            session.add(label)
+            session.commit()
+            flash('Label created successfully!', 'success')
+            return redirect(url_for('account_labels', id=id))
+        except Exception as e:
+            session.rollback()
+            flash(f'Error creating label: {str(e)}', 'danger')
+        finally:
+            session.close()
+
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+        return render_template('accounts/labels/add.html', account=account)
+    finally:
+        session.close()
+
+
+@app.route('/accounts/<int:id>/labels/edit/<int:label_id>', methods=['GET', 'POST'])
+def account_edit_label(id, label_id):
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        label = session.query(Label).filter_by(id=label_id, credential_id=id).first()
+        if not label:
+            flash('Label not found!', 'danger')
+            return redirect(url_for('account_labels', id=id))
+
+        if request.method == 'POST':
+            label.name = request.form['name']
+            label.color = request.form.get('color', '#0d6efd')
+            session.commit()
+            flash('Label updated successfully!', 'success')
+            return redirect(url_for('account_labels', id=id))
+
+        return render_template('accounts/labels/edit.html', account=account, label=label)
+    except Exception as e:
+        session.rollback()
+        flash(f'Error updating label: {str(e)}', 'danger')
+        return redirect(url_for('account_labels', id=id))
+    finally:
+        session.close()
+
+
+@app.route('/accounts/<int:id>/labels/delete/<int:label_id>', methods=['POST'])
+def account_delete_label(id, label_id):
+    session = db_service.get_session()
+    try:
+        label = session.query(Label).filter_by(id=label_id, credential_id=id).first()
+        if label:
+            session.delete(label)
+            session.commit()
+            flash('Label deleted successfully!', 'success')
+        else:
+            flash('Label not found!', 'danger')
+    except Exception as e:
+        session.rollback()
+        flash(f'Error deleting label: {str(e)}', 'danger')
+    finally:
+        session.close()
+    return redirect(url_for('account_labels', id=id))
+
+
+@app.route('/accounts/<int:id>/labels/sync', methods=['POST'])
+def account_sync_labels(id):
+    """Sync labels from IMAP flags for an account."""
+    session = db_service.get_session()
+    try:
+        credential = session.query(EmailCredential).filter_by(id=id).first()
+        if not credential:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        config = load_config()
+        from LoggingService import LoggingService
+        logger = LoggingService.setup(config)
+        from EMailService import IMAPClient
+
+        imap_client = IMAPClient(credential, config, logger)
+        imap_client.connect()
+
+        try:
+            flags = imap_client.get_flags()
+            existing_labels = session.query(Label).filter_by(credential_id=id).all()
+            existing_names = {l.name for l in existing_labels}
+
+            synced = 0
+            for flag in flags:
+                if flag not in existing_names:
+                    label = Label(
+                        credential_id=id,
+                        name=flag,
+                        color='#6c757d',
+                        is_imap_flag=True
+                    )
+                    session.add(label)
+                    synced += 1
+
+            session.commit()
+            flash(f'Synced {synced} new labels from IMAP flags.', 'success')
+        finally:
+            imap_client.disconnect()
+
+    except Exception as e:
+        session.rollback()
+        flash(f'Error syncing labels: {str(e)}', 'danger')
+    finally:
+        session.close()
+
+    return redirect(url_for('account_labels', id=id))
+
+
+# Account Logs
+@app.route('/accounts/<int:id>/logs')
+def account_logs(id):
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        return render_template('accounts/logs.html', account=account)
     finally:
         session.close()
 
@@ -264,242 +714,6 @@ def get_folders(credential_id):
         return jsonify({'error': str(e)}), 500
     finally:
         session.close()
-
-
-@app.route('/rules/add', methods=['GET', 'POST'])
-def add_rule():
-    if request.method == 'POST':
-        session = db_service.get_session()
-        try:
-            # Create EmailRule
-            rule = EmailRule(
-                email_credential_id=int(request.form['email_account_id']),
-                name=request.form['name'],
-                enabled='enabled' in request.form,
-                condition=request.form.get('logic', 'AND'),
-                actions='',  # Not used, but required
-                monitored_folder=request.form.get('monitored_folder', 'INBOX')
-            )
-            session.add(rule)
-            session.flush()  # Get rule.id
-
-            # Parse and create conditions
-            condition_fields = [k for k in request.form.keys() if k.startswith('condition_field_')]
-            for field_key in condition_fields:
-                index = field_key.split('_')[-1]
-                condition = RuleCondition(
-                    rule_id=rule.id,
-                    field=request.form[f'condition_field_{index}'],
-                    operator=request.form[f'condition_operator_{index}'],
-                    value=request.form[f'condition_value_{index}']
-                )
-                session.add(condition)
-
-            # Parse and create actions
-            action_types = [k for k in request.form.keys() if k.startswith('action_type_')]
-            for type_key in action_types:
-                index = type_key.split('_')[-1]
-                action_type = request.form[f'action_type_{index}']
-                action_value = request.form.get(f'action_value_{index}', '')
-
-                action = RuleAction(
-                    rule_id=rule.id,
-                    action_type=action_type,
-                    action_value=action_value,
-                    folder=action_value if action_type in ['move_to_folder', 'copy_to_folder'] else None,
-                    label=action_value if action_type == 'add_label' else None
-                )
-                session.add(action)
-
-            session.commit()
-            flash('Email rule added successfully!', 'success')
-            return redirect(url_for('list_rules'))
-        except Exception as e:
-            session.rollback()
-            flash(f'Error adding rule: {str(e)}', 'danger')
-        finally:
-            session.close()
-
-    # GET request - show form
-    session = db_service.get_session()
-    try:
-        accounts = session.query(EmailCredential).all()
-        return render_template('rules/add.html', accounts=accounts)
-    finally:
-        session.close()
-
-
-@app.route('/rules/edit/<int:id>', methods=['GET', 'POST'])
-def edit_rule(id):
-    session = db_service.get_session()
-    try:
-        rule = session.query(EmailRule).filter_by(id=id).first()
-        if not rule:
-            flash('Rule not found!', 'danger')
-            return redirect(url_for('list_rules'))
-
-        if request.method == 'POST':
-            # Update rule basics
-            rule.email_credential_id = int(request.form['email_account_id'])
-            rule.name = request.form['name']
-            rule.enabled = 'enabled' in request.form
-            rule.condition = request.form.get('logic', 'AND')
-            rule.monitored_folder = request.form.get('monitored_folder', 'INBOX')
-
-            # Delete existing conditions and actions
-            session.query(RuleCondition).filter_by(rule_id=rule.id).delete()
-            session.query(RuleAction).filter_by(rule_id=rule.id).delete()
-
-            # Parse and create new conditions
-            condition_fields = [k for k in request.form.keys() if k.startswith('condition_field_')]
-            for field_key in condition_fields:
-                index = field_key.split('_')[-1]
-                condition = RuleCondition(
-                    rule_id=rule.id,
-                    field=request.form[f'condition_field_{index}'],
-                    operator=request.form[f'condition_operator_{index}'],
-                    value=request.form[f'condition_value_{index}']
-                )
-                session.add(condition)
-
-            # Parse and create new actions
-            action_types = [k for k in request.form.keys() if k.startswith('action_type_')]
-            for type_key in action_types:
-                index = type_key.split('_')[-1]
-                action_type = request.form[f'action_type_{index}']
-                action_value = request.form.get(f'action_value_{index}', '')
-
-                action = RuleAction(
-                    rule_id=rule.id,
-                    action_type=action_type,
-                    action_value=action_value,
-                    folder=action_value if action_type in ['move_to_folder', 'copy_to_folder'] else None,
-                    label=action_value if action_type == 'add_label' else None
-                )
-                session.add(action)
-
-            session.commit()
-            flash('Email rule updated successfully!', 'success')
-            return redirect(url_for('list_rules'))
-
-        # GET request - show form
-        accounts = session.query(EmailCredential).all()
-        return render_template('rules/edit.html', rule=rule, accounts=accounts)
-    except Exception as e:
-        session.rollback()
-        flash(f'Error updating rule: {str(e)}', 'danger')
-        return redirect(url_for('list_rules'))
-    finally:
-        session.close()
-
-
-@app.route('/rules/delete/<int:id>', methods=['POST'])
-def delete_rule(id):
-    session = db_service.get_session()
-    try:
-        rule = session.query(EmailRule).filter_by(id=id).first()
-        if rule:
-            # Delete related conditions and actions first (if not using cascade)
-            session.query(RuleCondition).filter_by(rule_id=id).delete()
-            session.query(RuleAction).filter_by(rule_id=id).delete()
-            session.delete(rule)
-            session.commit()
-            flash('Email rule deleted successfully!', 'success')
-        else:
-            flash('Rule not found!', 'danger')
-    except Exception as e:
-        session.rollback()
-        flash(f'Error deleting rule: {str(e)}', 'danger')
-    finally:
-        session.close()
-
-    return redirect(url_for('list_rules'))
-
-
-# Label Management
-@app.route('/labels')
-def list_labels():
-    session = db_service.get_session()
-    try:
-        accounts = session.query(EmailCredential).all()
-        labels = session.query(Label).all()
-        return render_template('labels/list.html', labels=labels, accounts=accounts)
-    finally:
-        session.close()
-
-
-@app.route('/labels/add', methods=['GET', 'POST'])
-def add_label_page():
-    if request.method == 'POST':
-        session = db_service.get_session()
-        try:
-            label = Label(
-                credential_id=int(request.form['credential_id']),
-                name=request.form['name'],
-                color=request.form.get('color', '#0d6efd'),
-                is_imap_flag=False
-            )
-            session.add(label)
-            session.commit()
-            flash('Label created successfully!', 'success')
-            return redirect(url_for('list_labels'))
-        except Exception as e:
-            session.rollback()
-            flash(f'Error creating label: {str(e)}', 'danger')
-        finally:
-            session.close()
-
-    session = db_service.get_session()
-    try:
-        accounts = session.query(EmailCredential).all()
-        return render_template('labels/add.html', accounts=accounts)
-    finally:
-        session.close()
-
-
-@app.route('/labels/edit/<int:id>', methods=['GET', 'POST'])
-def edit_label_page(id):
-    session = db_service.get_session()
-    try:
-        label = session.query(Label).filter_by(id=id).first()
-        if not label:
-            flash('Label not found!', 'danger')
-            return redirect(url_for('list_labels'))
-
-        if request.method == 'POST':
-            label.name = request.form['name']
-            label.color = request.form.get('color', '#0d6efd')
-            session.commit()
-            flash('Label updated successfully!', 'success')
-            return redirect(url_for('list_labels'))
-
-        accounts = session.query(EmailCredential).all()
-        return render_template('labels/edit.html', label=label, accounts=accounts)
-    except Exception as e:
-        session.rollback()
-        flash(f'Error updating label: {str(e)}', 'danger')
-        return redirect(url_for('list_labels'))
-    finally:
-        session.close()
-
-
-@app.route('/labels/delete/<int:id>', methods=['POST'])
-def delete_label(id):
-    session = db_service.get_session()
-    try:
-        label = session.query(Label).filter_by(id=id).first()
-        if label:
-            session.delete(label)
-            session.commit()
-            flash('Label deleted successfully!', 'success')
-        else:
-            flash('Label not found!', 'danger')
-    except Exception as e:
-        session.rollback()
-        flash(f'Error deleting label: {str(e)}', 'danger')
-    finally:
-        session.close()
-    return redirect(url_for('list_labels'))
 
 
 # Label API endpoints
@@ -613,55 +827,6 @@ def get_flags(credential_id):
         session.close()
 
 
-@app.route('/labels/sync/<int:credential_id>', methods=['POST'])
-def sync_labels_from_imap(credential_id):
-    """Sync labels from IMAP flags."""
-    session = db_service.get_session()
-    try:
-        credential = session.query(EmailCredential).filter_by(id=credential_id).first()
-        if not credential:
-            flash('Credential not found!', 'danger')
-            return redirect(url_for('list_labels'))
-
-        config = load_config()
-        from LoggingService import LoggingService
-        logger = LoggingService.setup(config)
-        from EMailService import IMAPClient
-
-        imap_client = IMAPClient(credential, config, logger)
-        imap_client.connect()
-
-        try:
-            flags = imap_client.get_flags()
-            existing_labels = session.query(Label).filter_by(credential_id=credential_id).all()
-            existing_names = {l.name for l in existing_labels}
-
-            synced = 0
-            for flag in flags:
-                if flag not in existing_names:
-                    label = Label(
-                        credential_id=credential_id,
-                        name=flag,
-                        color='#6c757d',
-                        is_imap_flag=True
-                    )
-                    session.add(label)
-                    synced += 1
-
-            session.commit()
-            flash(f'Synced {synced} new labels from IMAP flags.', 'success')
-        finally:
-            imap_client.disconnect()
-
-    except Exception as e:
-        session.rollback()
-        flash(f'Error syncing labels: {str(e)}', 'danger')
-    finally:
-        session.close()
-
-    return redirect(url_for('list_labels'))
-
-
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
     if request.method == 'POST':
@@ -736,94 +901,6 @@ def settings():
     return render_template('settings.html',
                          env_settings=env_settings,
                          app_settings=app_settings)
-
-
-# Dry-Run Testing
-@app.route('/rules/test/<int:id>', methods=['GET', 'POST'])
-def test_rule(id):
-    session = db_service.get_session()
-    try:
-        rule = session.query(EmailRule).filter_by(id=id).first()
-        if not rule:
-            flash('Rule not found!', 'danger')
-            return redirect(url_for('list_rules'))
-
-        if request.method == 'POST':
-            max_emails = int(request.form.get('max_emails', 10))
-
-            dry_run_request = DryRunRequest(
-                rule_id=rule.id,
-                email_credential_id=rule.email_credential_id,
-                status='pending',
-                max_emails=max_emails
-            )
-            session.add(dry_run_request)
-            session.commit()
-
-            flash(f'Dry-run test started for rule "{rule.name}"', 'info')
-            return redirect(url_for('view_dry_run_results', request_id=dry_run_request.id))
-
-        return render_template('rules/test.html', rule=rule)
-    except Exception as e:
-        session.rollback()
-        flash(f'Error starting dry-run test: {str(e)}', 'danger')
-        return redirect(url_for('list_rules'))
-    finally:
-        session.close()
-
-
-@app.route('/rules/test/results/<int:request_id>')
-def view_dry_run_results(request_id):
-    session = db_service.get_session()
-    try:
-        dry_run_request = session.query(DryRunRequest).filter_by(id=request_id).first()
-        if not dry_run_request:
-            flash('Dry-run request not found!', 'danger')
-            return redirect(url_for('list_rules'))
-
-        results = session.query(DryRunResult).filter_by(request_id=request_id).all()
-
-        results_data = []
-        for result in results:
-            condition_results = json.loads(result.condition_results) if result.condition_results else {}
-            actions_would_apply = json.loads(result.actions_would_apply) if result.actions_would_apply else []
-
-            results_data.append({
-                'id': result.id,
-                'email_uid': result.email_uid,
-                'email_subject': result.email_subject,
-                'email_from': result.email_from,
-                'email_date': result.email_date,
-                'matched': result.matched,
-                'condition_results': condition_results,
-                'actions_would_apply': actions_would_apply
-            })
-
-        return render_template('rules/test_results.html',
-                             dry_run_request=dry_run_request,
-                             results=results_data)
-    finally:
-        session.close()
-
-
-@app.route('/rules/test/status/<int:request_id>')
-def dry_run_status(request_id):
-    """AJAX endpoint to check dry-run status."""
-    session = db_service.get_session()
-    try:
-        dry_run_request = session.query(DryRunRequest).filter_by(id=request_id).first()
-        if not dry_run_request:
-            return jsonify({'error': 'Request not found'}), 404
-
-        result_count = session.query(DryRunResult).filter_by(request_id=request_id).count()
-
-        return jsonify({
-            'status': dry_run_request.status,
-            'result_count': result_count,
-            'processed_at': str(dry_run_request.processed_at) if dry_run_request.processed_at else None
-        })
-    finally:
-        session.close()
 
 
 @app.route('/rules/test-logs/<session_id>')
@@ -1002,7 +1079,7 @@ def test_rule_preview():
         return jsonify({'error': str(e)}), 500
 
 
-def parse_log_file(path: str, level_filter: str = None, search_filter: str = None) -> list:
+def parse_log_file(path: str, level_filter: str = None, search_filter: str = None, account_filter: str = None) -> list:
     """Parse log file and return structured entries."""
     log_pattern = re.compile(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - (\S+) - (\w+) - (.*)$')
     entries = []
@@ -1023,6 +1100,10 @@ def parse_log_file(path: str, level_filter: str = None, search_filter: str = Non
                         continue
                     if search_filter and search_filter.lower() not in message.lower():
                         continue
+                    if account_filter:
+                        account_lower = account_filter.lower()
+                        if account_lower not in logger.lower() and account_lower not in message.lower():
+                            continue
                     entries.append({
                         'timestamp': timestamp,
                         'logger': logger,
@@ -1040,12 +1121,13 @@ def get_logs():
     """Get log entries with optional filtering."""
     level = request.args.get('level', '')
     search = request.args.get('search', '')
+    account = request.args.get('account', '')
     limit = int(request.args.get('limit', 500))
 
     config = load_config()
     log_path = config.get('log_file_path', 'logs/mailmind.log')
 
-    entries = parse_log_file(log_path, level or None, search or None)
+    entries = parse_log_file(log_path, level or None, search or None, account or None)
 
     # Return last N entries (newest last)
     if len(entries) > limit:
@@ -1066,11 +1148,12 @@ def export_logs_csv():
 
     level = request.args.get('level', '')
     search = request.args.get('search', '')
+    account = request.args.get('account', '')
 
     config = load_config()
     log_path = config.get('log_file_path', 'logs/mailmind.log')
 
-    entries = parse_log_file(log_path, level or None, search or None)
+    entries = parse_log_file(log_path, level or None, search or None, account or None)
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -1091,11 +1174,12 @@ def export_logs_jsonl():
     """Export logs as JSONL."""
     level = request.args.get('level', '')
     search = request.args.get('search', '')
+    account = request.args.get('account', '')
 
     config = load_config()
     log_path = config.get('log_file_path', 'logs/mailmind.log')
 
-    entries = parse_log_file(log_path, level or None, search or None)
+    entries = parse_log_file(log_path, level or None, search or None, account or None)
 
     lines = [json.dumps(entry) for entry in entries]
     content = '\n'.join(lines)

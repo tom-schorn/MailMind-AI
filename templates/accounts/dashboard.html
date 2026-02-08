@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}{{ account.email_address }} - MailMind AI{% endblock %}
+
+{% block page_title %}Account Dashboard{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('list_accounts') }}">Email Accounts</a></li>
+<li class="breadcrumb-item active">{{ account.email_address }}</li>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h4 class="mb-1">{{ account.email_address }}</h4>
+      <span class="text-muted">{{ account.host }}:{{ account.port }}
+        {% if account.use_ssl %}
+          <span class="badge bg-success">SSL</span>
+        {% elif account.use_tls %}
+          <span class="badge bg-info">TLS</span>
+        {% endif %}
+      </span>
+    </div>
+    <a href="{{ url_for('edit_account', id=account.id) }}" class="btn btn-sm btn-outline-warning">
+      <i class="bi bi-pencil"></i> Edit Account
+    </a>
+  </div>
+
+  <!-- Stat Cards -->
+  <div class="row">
+    <div class="col-md-4">
+      <div class="card info-card">
+        <div class="card-body">
+          <h5 class="card-title">Rules</h5>
+          <div class="d-flex align-items-center">
+            <div class="card-icon rounded-circle d-flex align-items-center justify-content-center" style="background: #e0f0ff; width: 48px; height: 48px;">
+              <i class="bi bi-funnel" style="color: #4154f1; font-size: 24px;"></i>
+            </div>
+            <div class="ps-3">
+              <h6>{{ rules_count }}</h6>
+            </div>
+          </div>
+          <a href="{{ url_for('account_rules', id=account.id) }}" class="small mt-2 d-block">View Rules <i class="bi bi-arrow-right"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card info-card">
+        <div class="card-body">
+          <h5 class="card-title">Labels</h5>
+          <div class="d-flex align-items-center">
+            <div class="card-icon rounded-circle d-flex align-items-center justify-content-center" style="background: #e0ffe0; width: 48px; height: 48px;">
+              <i class="bi bi-tags" style="color: #2eca6a; font-size: 24px;"></i>
+            </div>
+            <div class="ps-3">
+              <h6>{{ labels_count }}</h6>
+            </div>
+          </div>
+          <a href="{{ url_for('account_labels', id=account.id) }}" class="small mt-2 d-block">View Labels <i class="bi bi-arrow-right"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card info-card">
+        <div class="card-body">
+          <h5 class="card-title">Service Status</h5>
+          <div class="d-flex align-items-center">
+            <div class="card-icon rounded-circle d-flex align-items-center justify-content-center" style="background: #ffe0e0; width: 48px; height: 48px;">
+              <i class="bi bi-cpu" style="color: #ff771d; font-size: 24px;"></i>
+            </div>
+            <div class="ps-3">
+              {% if service_status %}
+                {% if service_status.status == 'running' %}
+                  <span class="badge bg-success">Running</span>
+                {% elif service_status.status == 'stopped' %}
+                  <span class="badge bg-secondary">Stopped</span>
+                {% elif service_status.status == 'error' %}
+                  <span class="badge bg-danger">Error</span>
+                {% else %}
+                  <span class="badge bg-warning">{{ service_status.status }}</span>
+                {% endif %}
+              {% else %}
+                <span class="badge bg-secondary">Not Running</span>
+              {% endif %}
+            </div>
+          </div>
+          <a href="{{ url_for('account_logs', id=account.id) }}" class="small mt-2 d-block">View Logs <i class="bi bi-arrow-right"></i></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="row">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Quick Actions</h5>
+          <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('account_add_rule', id=account.id) }}" class="btn btn-primary">
+              <i class="bi bi-plus-circle"></i> Add Rule
+            </a>
+            <a href="{{ url_for('account_add_label', id=account.id) }}" class="btn btn-success">
+              <i class="bi bi-plus-circle"></i> Add Label
+            </a>
+            <a href="{{ url_for('account_logs', id=account.id) }}" class="btn btn-info">
+              <i class="bi bi-journal-text"></i> View Logs
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Activity -->
+  <div class="row">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Recent Activity</h5>
+          <table class="table table-sm table-hover">
+            <thead>
+              <tr>
+                <th>Email UID</th>
+                <th>Rule</th>
+                <th>Actions Taken</th>
+                <th>Applied At</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for activity in recent_activity %}
+              <tr>
+                <td>{{ activity.email_uid }}</td>
+                <td>{{ activity.rule_id }}</td>
+                <td><small>{{ activity.actions_taken[:80] if activity.actions_taken else 'N/A' }}{% if activity.actions_taken and activity.actions_taken|length > 80 %}...{% endif %}</small></td>
+                <td><small>{{ activity.applied_at.strftime('%Y-%m-%d %H:%M') if activity.applied_at else 'N/A' }}</small></td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="4" class="text-center text-muted">No recent activity.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+{% endblock %}

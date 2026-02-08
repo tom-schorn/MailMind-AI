@@ -1,12 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Edit Email Rule - MailMind AI{% endblock %}
+{% block title %}Add Email Rule - MailMind AI{% endblock %}
 
-{% block page_title %}Edit Email Rule{% endblock %}
+{% block page_title %}Add Email Rule{% endblock %}
 
 {% block breadcrumb %}
-<li class="breadcrumb-item"><a href="{{ url_for('list_rules') }}">Email Rules</a></li>
-<li class="breadcrumb-item active">Edit</li>
+<li class="breadcrumb-item"><a href="{{ url_for('list_accounts') }}">Email Accounts</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('account_dashboard', id=account.id) }}">{{ account.email_address }}</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('account_rules', id=account.id) }}">Rules</a></li>
+<li class="breadcrumb-item active">Add</li>
 {% endblock %}
 
 {% block content %}
@@ -16,38 +18,28 @@
 
       <div class="card">
         <div class="card-body">
-          <h5 class="card-title">Edit Email Rule</h5>
+          <h5 class="card-title">New Email Rule</h5>
 
-          <form class="row g-3" method="POST" action="{{ url_for('edit_rule', id=rule.id) }}">
-            <!-- Basic Fields -->
-            <div class="col-md-12">
-              <label for="email_account_id" class="form-label">Email Account</label>
-              <select class="form-select" id="email_account_id" name="email_account_id" required>
-                {% for account in accounts %}
-                <option value="{{ account.id }}" {% if account.id == rule.email_credential_id %}selected{% endif %}>{{ account.email_address }} ({{ account.host }})</option>
-                {% endfor %}
-              </select>
-            </div>
+          <form class="row g-3" method="POST" action="{{ url_for('account_add_rule', id=account.id) }}">
+            <input type="hidden" name="email_account_id" value="{{ account.id }}">
 
             <div class="col-md-12">
               <label for="monitored_folder" class="form-label">Monitored Folder</label>
               <select class="form-select" id="monitored_folder" name="monitored_folder" required>
-                <option value="{{ rule.monitored_folder if rule.monitored_folder else 'INBOX' }}" selected>
-                  {{ rule.monitored_folder if rule.monitored_folder else 'INBOX' }}
-                </option>
+                <option value="INBOX" selected>Loading...</option>
               </select>
               <div class="form-text">Select which folder to monitor for new emails</div>
             </div>
 
             <div class="col-md-8">
               <label for="name" class="form-label">Rule Name</label>
-              <input type="text" class="form-control" id="name" name="name" value="{{ rule.name }}" required>
+              <input type="text" class="form-control" id="name" name="name" required>
             </div>
 
             <div class="col-md-4">
               <label class="form-label">Enabled</label>
               <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="enabled" name="enabled" {% if rule.enabled %}checked{% endif %}>
+                <input class="form-check-input" type="checkbox" id="enabled" name="enabled" checked>
                 <label class="form-check-label" for="enabled">
                   Rule is active
                 </label>
@@ -57,13 +49,13 @@
             <div class="col-md-12">
               <label class="form-label">Condition Logic</label>
               <div class="form-check">
-                <input class="form-check-input" type="radio" name="logic" id="logic_and" value="AND" {% if rule.condition == 'AND' %}checked{% endif %}>
+                <input class="form-check-input" type="radio" name="logic" id="logic_and" value="AND" checked>
                 <label class="form-check-label" for="logic_and">
                   AND (all conditions must match)
                 </label>
               </div>
               <div class="form-check">
-                <input class="form-check-input" type="radio" name="logic" id="logic_or" value="OR" {% if rule.condition == 'OR' %}checked{% endif %}>
+                <input class="form-check-input" type="radio" name="logic" id="logic_or" value="OR">
                 <label class="form-check-label" for="logic_or">
                   OR (at least one condition must match)
                 </label>
@@ -75,39 +67,36 @@
               <hr>
               <h6>Conditions</h6>
               <div id="conditions-container">
-                {% for cond in rule.conditions %}
                 <div class="condition-row mb-2">
                   <div class="row g-2">
                     <div class="col-md-3">
-                      <select name="condition_field_{{ loop.index0 }}" class="form-select condition-field-select" required onchange="onConditionFieldChange(this)">
-                        <option value="from" {% if cond.field == 'from' %}selected{% endif %}>From</option>
-                        <option value="subject" {% if cond.field == 'subject' %}selected{% endif %}>Subject</option>
-                        <option value="body" {% if cond.field == 'body' %}selected{% endif %}>Body</option>
-                        <option value="to" {% if cond.field == 'to' %}selected{% endif %}>To</option>
-                        <option value="header" {% if cond.field == 'header' %}selected{% endif %}>Header</option>
-                        <option value="date" {% if cond.field == 'date' %}selected{% endif %}>Date</option>
-                        <option value="label" {% if cond.field == 'label' %}selected{% endif %}>Label</option>
+                      <select name="condition_field_0" class="form-select condition-field-select" required onchange="onConditionFieldChange(this)">
+                        <option value="from">From</option>
+                        <option value="subject">Subject</option>
+                        <option value="body">Body</option>
+                        <option value="to">To</option>
+                        <option value="header">Header</option>
+                        <option value="date">Date</option>
+                        <option value="label">Label</option>
                       </select>
                     </div>
                     <div class="col-md-3">
-                      <select name="condition_operator_{{ loop.index0 }}" class="form-select condition-operator-select" required>
-                        <option value="contains" {% if cond.operator == 'contains' %}selected{% endif %}>contains</option>
-                        <option value="equals" {% if cond.operator == 'equals' %}selected{% endif %}>equals</option>
-                        <option value="not_equals" {% if cond.operator == 'not_equals' %}selected{% endif %}>not equals</option>
-                        <option value="starts_with" {% if cond.operator == 'starts_with' %}selected{% endif %}>starts with</option>
-                        <option value="ends_with" {% if cond.operator == 'ends_with' %}selected{% endif %}>ends with</option>
-                        <option value="greater_than" {% if cond.operator == 'greater_than' %}selected{% endif %}>greater than</option>
-                        <option value="less_than" {% if cond.operator == 'less_than' %}selected{% endif %}>less than</option>
-                        <option value="greater_equal" {% if cond.operator == 'greater_equal' %}selected{% endif %}>greater or equal</option>
-                        <option value="less_equal" {% if cond.operator == 'less_equal' %}selected{% endif %}>less or equal</option>
-                        <option value="date_older_than" {% if cond.operator == 'date_older_than' %}selected{% endif %}>older than (days)</option>
-                        <option value="date_before" {% if cond.operator == 'date_before' %}selected{% endif %}>before (date)</option>
-                        <option value="has_label" {% if cond.operator == 'has_label' %}selected{% endif %}>has label</option>
-                        <option value="not_has_label" {% if cond.operator == 'not_has_label' %}selected{% endif %}>does not have label</option>
+                      <select name="condition_operator_0" class="form-select condition-operator-select" required>
+                        <option value="contains">contains</option>
+                        <option value="equals">equals</option>
+                        <option value="not_equals">not equals</option>
+                        <option value="starts_with">starts with</option>
+                        <option value="ends_with">ends with</option>
+                        <option value="greater_than">greater than</option>
+                        <option value="less_than">less than</option>
+                        <option value="greater_equal">greater or equal</option>
+                        <option value="less_equal">less or equal</option>
+                        <option value="date_older_than">older than (days)</option>
+                        <option value="date_before">before (date)</option>
                       </select>
                     </div>
                     <div class="col-md-5">
-                      <input type="text" name="condition_value_{{ loop.index0 }}" class="form-control condition-value-input" placeholder="Value" value="{{ cond.value }}" required>
+                      <input type="text" name="condition_value_0" class="form-control condition-value-input" placeholder="Value" required>
                     </div>
                     <div class="col-md-1">
                       <button type="button" class="btn btn-danger btn-sm" onclick="removeCondition(this)">
@@ -116,7 +105,6 @@
                     </div>
                   </div>
                 </div>
-                {% endfor %}
               </div>
               <button type="button" class="btn btn-sm btn-secondary" onclick="addCondition()">
                 <i class="bi bi-plus-circle"></i> Add Condition
@@ -128,21 +116,20 @@
               <hr>
               <h6>Actions</h6>
               <div id="actions-container">
-                {% for action in rule.rule_actions %}
                 <div class="action-row mb-2">
                   <div class="row g-2">
                     <div class="col-md-3">
-                      <select name="action_type_{{ loop.index0 }}" class="form-select action-type-select" required onchange="toggleActionFields(this)">
-                        <option value="move_to_folder" {% if action.action_type == 'move_to_folder' %}selected{% endif %}>Move to Folder</option>
-                        <option value="copy_to_folder" {% if action.action_type == 'copy_to_folder' %}selected{% endif %}>Copy to Folder</option>
-                        <option value="add_label" {% if action.action_type == 'add_label' %}selected{% endif %}>Add Label</option>
-                        <option value="mark_as_read" {% if action.action_type == 'mark_as_read' %}selected{% endif %}>Mark as Read</option>
-                        <option value="delete" {% if action.action_type == 'delete' %}selected{% endif %}>Delete</option>
-                        <option value="modify_subject" {% if action.action_type == 'modify_subject' %}selected{% endif %}>Modify Subject</option>
+                      <select name="action_type_0" class="form-select action-type-select" required onchange="toggleActionFields(this)">
+                        <option value="move_to_folder">Move to Folder</option>
+                        <option value="copy_to_folder">Copy to Folder</option>
+                        <option value="add_label">Add Label</option>
+                        <option value="mark_as_read">Mark as Read</option>
+                        <option value="delete">Delete</option>
+                        <option value="modify_subject">Modify Subject</option>
                       </select>
                     </div>
                     <div class="col-md-8">
-                      <input type="text" name="action_value_{{ loop.index0 }}" class="form-control action-value" placeholder="Folder/Label/Subject Pattern" value="{{ action.action_value }}">
+                      <input type="text" name="action_value_0" class="form-control action-value" placeholder="Folder/Label/Subject Pattern" required>
                     </div>
                     <div class="col-md-1">
                       <button type="button" class="btn btn-danger btn-sm" onclick="removeAction(this)">
@@ -151,7 +138,6 @@
                     </div>
                   </div>
                 </div>
-                {% endfor %}
               </div>
               <button type="button" class="btn btn-sm btn-secondary" onclick="addAction()">
                 <i class="bi bi-plus-circle"></i> Add Action
@@ -162,11 +148,35 @@
               <button type="button" class="btn btn-info" onclick="testRule()">
                 <i class="bi bi-play-circle"></i> Test Rule (Dry-Run)
               </button>
-              <button type="submit" class="btn btn-primary">Update Rule</button>
-              <a href="{{ url_for('list_rules') }}" class="btn btn-secondary">Cancel</a>
+              <button type="submit" class="btn btn-primary">Save Rule</button>
+              <a href="{{ url_for('account_rules', id=account.id) }}" class="btn btn-secondary">Cancel</a>
             </div>
           </form>
 
+        </div>
+      </div>
+
+      <!-- Test Log Modal -->
+      <div class="modal fade" id="testLogModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Test Progress</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-2">
+                <strong>Status:</strong> <span id="modal-status">Testing...</span>
+                <span id="modal-timer" class="text-muted ms-2">(0s)</span>
+              </div>
+              <div class="mb-2">
+                <strong>Progress:</strong> <span id="modal-progress">0 emails checked</span>
+              </div>
+              <div style="max-height: 400px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px;">
+                <div id="log-output"></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -175,7 +185,7 @@
         <div class="card-body">
           <h5 class="card-title">Test Results</h5>
           <div id="test-status" class="alert alert-info" style="display: none;">
-            <i class="bi bi-hourglass-split"></i> Testing...
+            <i class="bi bi-hourglass-split"></i> <span id="test-progress">Testing...</span>
           </div>
           <div id="test-error" class="alert alert-danger" style="display: none;"></div>
           <div id="test-results-content"></div>
@@ -215,32 +225,26 @@
 
 {% block extra_js %}
 <script>
-let conditionIndex = {{ rule.conditions|length }};
-let actionIndex = {{ rule.rule_actions|length }};
+const credentialId = {{ account.id }};
+let conditionIndex = 1;
+let actionIndex = 1;
 let cachedFolders = null;
-let cachedCredentialId = null;
+let cachedLabels = null;
+let labelTargetElement = null;
 
-function fetchFoldersIfNeeded(credentialId) {
-  if (cachedFolders && cachedCredentialId === credentialId) {
-    return Promise.resolve(cachedFolders);
-  }
+function fetchFoldersIfNeeded() {
+  if (cachedFolders) return Promise.resolve(cachedFolders);
   return fetch(`/api/folders/${credentialId}`)
     .then(r => r.json())
     .then(data => {
       if (data.error) throw data.error;
       cachedFolders = data.folders;
-      cachedCredentialId = credentialId;
       return data.folders;
     });
 }
 
-let cachedLabels = null;
-let labelTargetElement = null;
-
-function fetchLabelsIfNeeded(credentialId) {
-  if (cachedLabels && cachedCredentialId === credentialId) {
-    return Promise.resolve(cachedLabels);
-  }
+function fetchLabelsIfNeeded() {
+  if (cachedLabels) return Promise.resolve(cachedLabels);
   return fetch(`/api/labels/${credentialId}`)
     .then(r => r.json())
     .then(data => {
@@ -251,16 +255,13 @@ function fetchLabelsIfNeeded(credentialId) {
 }
 
 function buildLabelSelect(inputName, currentValue, onChange) {
-  const credentialId = document.getElementById('email_account_id').value;
-  if (!credentialId) return null;
-
   const sel = document.createElement('select');
   sel.name = inputName;
   sel.className = 'form-select condition-value-input';
   sel.required = true;
   if (onChange) sel.addEventListener('change', onChange);
 
-  fetchLabelsIfNeeded(credentialId).then(labels => {
+  fetchLabelsIfNeeded().then(labels => {
     sel.innerHTML = '';
     labels.forEach(label => {
       const opt = document.createElement('option');
@@ -279,15 +280,12 @@ function buildLabelSelect(inputName, currentValue, onChange) {
 }
 
 function buildLabelSelectForAction(inputName, currentValue) {
-  const credentialId = document.getElementById('email_account_id').value;
-  if (!credentialId) return null;
-
   const sel = document.createElement('select');
   sel.name = inputName;
   sel.className = 'form-select action-value';
   sel.required = true;
 
-  fetchLabelsIfNeeded(credentialId).then(labels => {
+  fetchLabelsIfNeeded().then(labels => {
     sel.innerHTML = '';
     labels.forEach(label => {
       const opt = document.createElement('option');
@@ -313,12 +311,10 @@ function buildLabelSelectForAction(inputName, currentValue) {
 }
 
 function saveNewLabel() {
-  const credentialId = document.getElementById('email_account_id').value;
   const name = document.getElementById('new-label-name').value.trim();
   const color = document.getElementById('new-label-color').value;
 
   if (!name) { alert('Please enter a label name.'); return; }
-  if (!credentialId) { alert('Please select an email account first.'); return; }
 
   fetch(`/api/labels/${credentialId}`, {
     method: 'POST',
@@ -335,7 +331,7 @@ function saveNewLabel() {
 
     if (labelTargetElement) {
       const targetSelect = labelTargetElement;
-      fetchLabelsIfNeeded(credentialId).then(labels => {
+      fetchLabelsIfNeeded().then(labels => {
         targetSelect.innerHTML = '';
         labels.forEach(label => {
           const opt = document.createElement('option');
@@ -383,7 +379,6 @@ function onConditionFieldChange(fieldSelect) {
   const row = fieldSelect.closest('.condition-row');
   const operatorSelect = row.querySelector('.condition-operator-select');
   const field = fieldSelect.value;
-  const currentOp = operatorSelect.value;
 
   let operators;
   if (field === 'date') {
@@ -399,7 +394,6 @@ function onConditionFieldChange(fieldSelect) {
     const option = document.createElement('option');
     option.value = op.value;
     option.textContent = op.text;
-    if (op.value === currentOp) option.selected = true;
     operatorSelect.appendChild(option);
   });
 
@@ -412,7 +406,6 @@ function updateConditionValueInput(row) {
   const operator = operatorSelect.value;
   const existingInput = valueContainer.querySelector('[name^="condition_value_"]');
   const inputName = existingInput.name;
-  const currentValue = existingInput.value;
   const fieldSelect = row.querySelector('.condition-field-select');
   const field = fieldSelect ? fieldSelect.value : '';
 
@@ -423,28 +416,24 @@ function updateConditionValueInput(row) {
       dateInput.name = inputName;
       dateInput.className = 'form-control condition-value-input';
       dateInput.required = true;
-      dateInput.value = currentValue;
       existingInput.replaceWith(dateInput);
     }
   } else if (field === 'label') {
-    const sel = buildLabelSelect(inputName, currentValue, function() {
+    const sel = buildLabelSelect(inputName, existingInput.value, function() {
       if (this.value === '__create_new__') {
         labelTargetElement = this;
         new bootstrap.Modal(document.getElementById('createLabelModal')).show();
       }
     });
-    if (sel) {
-      existingInput.replaceWith(sel);
-    }
+    if (sel) existingInput.replaceWith(sel);
   } else {
-    if (existingInput.type === 'date') {
+    if (existingInput.type !== 'text' || existingInput.tagName !== 'INPUT') {
       const textInput = document.createElement('input');
       textInput.type = 'text';
       textInput.name = inputName;
       textInput.className = 'form-control condition-value-input';
       textInput.placeholder = operator === 'date_older_than' ? 'Days (e.g. 30)' : 'Value';
       textInput.required = true;
-      textInput.value = currentValue;
       existingInput.replaceWith(textInput);
     } else {
       existingInput.placeholder = operator === 'date_older_than' ? 'Days (e.g. 30)' : 'Value';
@@ -507,12 +496,11 @@ function removeCondition(button) {
 }
 
 function addAction() {
-  const idx = actionIndex;
   const html = `
     <div class="action-row mb-2">
       <div class="row g-2">
         <div class="col-md-3">
-          <select name="action_type_${idx}" class="form-select action-type-select" required onchange="toggleActionFields(this)">
+          <select name="action_type_${actionIndex}" class="form-select action-type-select" required onchange="toggleActionFields(this)">
             <option value="move_to_folder">Move to Folder</option>
             <option value="copy_to_folder">Copy to Folder</option>
             <option value="add_label">Add Label</option>
@@ -522,7 +510,7 @@ function addAction() {
           </select>
         </div>
         <div class="col-md-8">
-          <input type="text" name="action_value_${idx}" class="form-control action-value" placeholder="Folder/Label/Subject Pattern" required>
+          <input type="text" name="action_value_${actionIndex}" class="form-control action-value" placeholder="Folder/Label/Subject Pattern" required>
         </div>
         <div class="col-md-1">
           <button type="button" class="btn btn-danger btn-sm" onclick="removeAction(this)">
@@ -534,7 +522,6 @@ function addAction() {
   `;
   document.getElementById('actions-container').insertAdjacentHTML('beforeend', html);
   actionIndex++;
-  // Init the new action row - default is move_to_folder, so load folder select
   const newRow = document.getElementById('actions-container').lastElementChild;
   toggleActionFields(newRow.querySelector('.action-type-select'));
 }
@@ -569,48 +556,27 @@ function toggleActionFields(select) {
     el.removeAttribute('required');
     el.value = '';
   } else if (actionType === 'move_to_folder' || actionType === 'copy_to_folder') {
-    const credentialId = document.getElementById('email_account_id').value;
-    if (credentialId) {
-      fetchFoldersIfNeeded(credentialId).then(folders => {
-        const sel = document.createElement('select');
-        sel.name = elName;
-        sel.className = 'form-select action-value';
-        sel.required = true;
-        folders.forEach(folder => {
-          if (folder.selectable) {
-            const opt = document.createElement('option');
-            opt.value = folder.name;
-            opt.textContent = folder.name;
-            if (folder.name === currentValue) opt.selected = true;
-            sel.appendChild(opt);
-          }
-        });
-        existingEl.replaceWith(sel);
+    fetchFoldersIfNeeded().then(folders => {
+      const sel = document.createElement('select');
+      sel.name = elName;
+      sel.className = 'form-select action-value';
+      sel.required = true;
+      folders.forEach(folder => {
+        if (folder.selectable) {
+          const opt = document.createElement('option');
+          opt.value = folder.name;
+          opt.textContent = folder.name;
+          if (folder.name === currentValue) opt.selected = true;
+          sel.appendChild(opt);
+        }
       });
-    } else {
-      if (existingEl.tagName === 'SELECT') {
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.name = elName;
-        input.className = 'form-control action-value';
-        input.placeholder = 'Folder path (e.g., INBOX/Spam)';
-        input.required = true;
-        input.value = currentValue;
-        existingEl.replaceWith(input);
-      } else {
-        existingEl.style.display = 'block';
-        existingEl.setAttribute('required', 'required');
-        existingEl.placeholder = 'Folder path (e.g., INBOX/Spam)';
-      }
-    }
+      existingEl.replaceWith(sel);
+    });
   } else if (actionType === 'add_label') {
-    const credentialId = document.getElementById('email_account_id').value;
-    if (credentialId) {
-      const labelSel = buildLabelSelectForAction(elName, currentValue);
-      if (labelSel) {
-        existingEl.replaceWith(labelSel);
-        return;
-      }
+    const labelSel = buildLabelSelectForAction(elName, currentValue);
+    if (labelSel) {
+      existingEl.replaceWith(labelSel);
+      return;
     }
     if (existingEl.tagName === 'SELECT') {
       const input = document.createElement('input');
@@ -649,6 +615,27 @@ function toggleActionFields(select) {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
+  // Load folders immediately
+  fetchFoldersIfNeeded().then(folders => {
+    const folderSelect = document.getElementById('monitored_folder');
+    folderSelect.innerHTML = '';
+    folders.forEach(folder => {
+      if (folder.selectable) {
+        const option = document.createElement('option');
+        option.value = folder.name;
+        option.textContent = folder.name;
+        if (folder.name === 'INBOX') option.selected = true;
+        folderSelect.appendChild(option);
+      }
+    });
+  }).catch(err => {
+    console.error('Error loading folders:', err);
+    document.getElementById('monitored_folder').innerHTML = '<option value="INBOX">INBOX (error loading)</option>';
+  });
+
+  // Load labels cache
+  fetchLabelsIfNeeded().catch(() => {});
+
   document.querySelectorAll('.action-type-select').forEach(select => {
     toggleActionFields(select);
   });
@@ -663,49 +650,71 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function testRule() {
-  const credentialId = document.getElementById('email_account_id').value;
-  if (!credentialId) {
-    alert('Please select an email account first.');
-    return;
-  }
-
   const logic = document.querySelector('input[name="logic"]:checked').value;
 
   const conditions = [];
-  document.querySelectorAll('.condition-row').forEach((row, index) => {
-    const field = row.querySelector(`select[name^="condition_field_"]`).value;
-    const operator = row.querySelector(`select[name^="condition_operator_"]`).value;
-    const valueEl = row.querySelector(`[name^="condition_value_"]`);
+  document.querySelectorAll('.condition-row').forEach(row => {
+    const field = row.querySelector('select[name^="condition_field_"]').value;
+    const operator = row.querySelector('select[name^="condition_operator_"]').value;
+    const valueEl = row.querySelector('[name^="condition_value_"]');
     const value = valueEl ? valueEl.value : '';
     conditions.push({ field, operator, value });
   });
 
   const actions = [];
-  document.querySelectorAll('.action-row').forEach((row, index) => {
-    const actionType = row.querySelector(`select[name^="action_type_"]`).value;
-    const actionValueEl = row.querySelector(`[name^="action_value_"]`);
+  document.querySelectorAll('.action-row').forEach(row => {
+    const actionType = row.querySelector('select[name^="action_type_"]').value;
+    const actionValueEl = row.querySelector('[name^="action_value_"]');
     const actionValue = actionValueEl ? actionValueEl.value : '';
     actions.push({ action_type: actionType, action_value: actionValue });
   });
 
-  document.getElementById('test-results-card').style.display = 'block';
-  document.getElementById('test-status').style.display = 'block';
-  document.getElementById('test-error').style.display = 'none';
-  document.getElementById('test-results-content').innerHTML = '';
+  // Show modal
+  const modal = new bootstrap.Modal(document.getElementById('testLogModal'));
+  modal.show();
+  document.getElementById('log-output').innerHTML = '<div>Initializing test...</div>';
+  document.getElementById('modal-status').textContent = 'Testing...';
+  document.getElementById('modal-progress').textContent = '0 emails checked';
 
   const startTime = Date.now();
-  const progressInterval = setInterval(() => {
+  const timerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
-    document.getElementById('test-progress').textContent = `Testing... (${elapsed}s elapsed)`;
+    document.getElementById('modal-timer').textContent = `(${elapsed}s)`;
   }, 1000);
+
+  let sessionId = null;
+  let logIndex = 0;
+  let logPollInterval = null;
+
+  function pollLogs() {
+    if (!sessionId) return;
+    fetch(`/rules/test-logs/${sessionId}?after=${logIndex}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.logs && data.logs.length > 0) {
+          const logOutput = document.getElementById('log-output');
+          data.logs.forEach(log => {
+            const levelClass = log.level === 'SUCCESS' ? 'text-success' :
+                              log.level === 'ERROR' ? 'text-danger' : '';
+            logOutput.innerHTML += `<div class="${levelClass}">[${log.timestamp.split('T')[1].split('.')[0]}] ${log.message}</div>`;
+          });
+          logIndex = data.total_logs;
+          logOutput.scrollTop = logOutput.scrollHeight;
+          document.getElementById('modal-progress').textContent =
+            data.logs[data.logs.length - 1].message.includes('Checking email') ?
+            data.logs[data.logs.length - 1].message : document.getElementById('modal-progress').textContent;
+        }
+        if (data.status === 'completed' && logPollInterval) {
+          clearInterval(logPollInterval);
+        }
+      });
+  }
 
   fetch('/rules/test-preview', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      credential_id: parseInt(credentialId),
+      credential_id: credentialId,
       logic: logic,
       conditions: conditions,
       actions: actions,
@@ -714,14 +723,22 @@ function testRule() {
   })
   .then(response => response.json())
   .then(data => {
-    clearInterval(progressInterval);
-    document.getElementById('test-status').style.display = 'none';
+    clearInterval(timerInterval);
+    if (logPollInterval) clearInterval(logPollInterval);
+
+    sessionId = data.session_id;
+    if (sessionId) {
+      logPollInterval = setInterval(pollLogs, 500);
+    }
 
     if (data.error) {
-      document.getElementById('test-error').style.display = 'block';
-      document.getElementById('test-error').textContent = 'Error: ' + data.error;
+      document.getElementById('modal-status').textContent = 'Error!';
+      document.getElementById('log-output').innerHTML += '<div class="text-danger">Error: ' + data.error + '</div>';
       return;
     }
+
+    document.getElementById('modal-status').textContent = 'Complete!';
+    document.getElementById('test-results-card').style.display = 'block';
 
     const results = data.results;
     const emailsChecked = data.emails_checked || 'N/A';
@@ -734,23 +751,12 @@ function testRule() {
         <strong>Emails Checked:</strong> ${emailsChecked} / ${totalEmails} (Inbox total: ${inboxTotal})
       </div>
       <table class="table table-striped">
-        <thead>
-          <tr>
-            <th>Subject</th>
-            <th>From</th>
-            <th>Date</th>
-            <th>Details</th>
-          </tr>
-        </thead>
+        <thead><tr><th>Subject</th><th>From</th><th>Date</th><th>Details</th></tr></thead>
         <tbody>
     `;
 
     if (results.length === 0) {
-      html += `
-        <tr>
-          <td colspan="4" class="text-center">No matching emails found.</td>
-        </tr>
-      `;
+      html += '<tr><td colspan="4" class="text-center">No matching emails found.</td></tr>';
     }
 
     results.forEach((result, index) => {
@@ -760,8 +766,7 @@ function testRule() {
           <td>${result.email_from}</td>
           <td>${result.email_date}</td>
           <td>
-            <button class="btn btn-sm btn-info" type="button" data-bs-toggle="collapse"
-                    data-bs-target="#details-${index}">
+            <button class="btn btn-sm btn-info" type="button" data-bs-toggle="collapse" data-bs-target="#details-${index}">
               <i class="bi bi-eye"></i> View
             </button>
           </td>
@@ -776,75 +781,30 @@ function testRule() {
         html += `
           <div class="mb-2">
             <strong>${cond.field}</strong> ${cond.operator} "${cond.value}":
-            ${cond.matched ?
-              '<span class="badge bg-success">Matched</span>' :
-              '<span class="badge bg-secondary">Not Matched</span>'}
-            <br>
-            <small class="text-muted">${cond.reason}</small>
+            ${cond.matched ? '<span class="badge bg-success">Matched</span>' : '<span class="badge bg-secondary">Not Matched</span>'}
+            <br><small class="text-muted">${cond.reason}</small>
           </div>
         `;
       });
 
       if (result.matched && result.actions_would_apply.length > 0) {
-        html += `
-          <h6 class="mt-3">Actions that would be applied:</h6>
-          <ul>
-        `;
-        result.actions_would_apply.forEach(action => {
-          html += `<li>${action}</li>`;
-        });
-        html += `</ul>`;
+        html += '<h6 class="mt-3">Actions that would be applied:</h6><ul>';
+        result.actions_would_apply.forEach(action => { html += `<li>${action}</li>`; });
+        html += '</ul>';
       }
 
-      html += `
-            </div>
-          </td>
-        </tr>
-      `;
+      html += '</div></td></tr>';
     });
 
-    html += `
-        </tbody>
-      </table>
-    `;
-
+    html += '</tbody></table>';
     document.getElementById('test-results-content').innerHTML = html;
   })
   .catch(error => {
-    clearInterval(progressInterval);
-    document.getElementById('test-status').style.display = 'none';
-    document.getElementById('test-error').style.display = 'block';
-    document.getElementById('test-error').textContent = 'Error: ' + error.message;
+    clearInterval(timerInterval);
+    if (logPollInterval) clearInterval(logPollInterval);
+    document.getElementById('modal-status').textContent = 'Error!';
+    document.getElementById('log-output').innerHTML += '<div class="text-danger">Error: ' + error.message + '</div>';
   });
 }
-
-// Load folders on page load
-const credentialId = {{ rule.email_credential_id }};
-const currentFolder = "{{ rule.monitored_folder if rule.monitored_folder else 'INBOX' }}";
-
-fetch(`/api/folders/${credentialId}`)
-  .then(r => r.json())
-  .then(data => {
-    if (data.error) {
-      console.error('Error loading folders:', data.error);
-      return;
-    }
-
-    const folderSelect = document.getElementById('monitored_folder');
-    folderSelect.innerHTML = '';
-
-    data.folders.forEach(folder => {
-      if (folder.selectable) {
-        const option = document.createElement('option');
-        option.value = folder.name;
-        option.textContent = folder.name;
-        if (folder.name === currentFolder) {
-          option.selected = true;
-        }
-        folderSelect.appendChild(option);
-      }
-    });
-  })
-  .catch(err => console.error('Error loading folders:', err));
 </script>
 {% endblock %}

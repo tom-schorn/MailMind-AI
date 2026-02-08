@@ -5,7 +5,9 @@
 {% block page_title %}Test Email Rule{% endblock %}
 
 {% block breadcrumb %}
-<li class="breadcrumb-item"><a href="{{ url_for('list_rules') }}">Email Rules</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('list_accounts') }}">Email Accounts</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('account_dashboard', id=account.id) }}">{{ account.email_address }}</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('account_rules', id=account.id) }}">Rules</a></li>
 <li class="breadcrumb-item active">Test Rule</li>
 {% endblock %}
 
@@ -36,7 +38,7 @@
 
             <div class="mb-3">
               <h6>Rule Details:</h6>
-              <p><strong>Email Account:</strong> {{ rule.email_account.email_address }}</p>
+              <p><strong>Email Account:</strong> {{ account.email_address }}</p>
               <p><strong>Status:</strong>
                 {% if rule.enabled %}
                   <span class="badge bg-success">Enabled</span>
@@ -53,7 +55,7 @@
               <button type="submit" class="btn btn-primary">
                 <i class="bi bi-play-circle"></i> Start Test
               </button>
-              <a href="{{ url_for('list_rules') }}" class="btn btn-secondary">
+              <a href="{{ url_for('account_rules', id=account.id) }}" class="btn btn-secondary">
                 <i class="bi bi-x-circle"></i> Cancel
               </a>
             </div>
