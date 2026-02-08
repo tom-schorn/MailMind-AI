@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from utils import get_config_file, ensure_data_dir
 
@@ -35,7 +36,8 @@ def load_config():
     try:
         with open(config_file, 'r') as f:
             return json.load(f)
-    except (json.JSONDecodeError, IOError):
+    except (json.JSONDecodeError, IOError) as e:
+        logging.getLogger('MailMind').warning(f"Config file corrupt or unreadable ({e}), using defaults")
         return get_default_config()
 
 def save_config(data):
