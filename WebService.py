@@ -265,6 +265,11 @@ def account_add_rule(id):
     if request.method == 'POST':
         session = db_service.get_session()
         try:
+            account = session.query(EmailCredential).filter_by(id=id).first()
+            if not account:
+                flash('Account not found!', 'danger')
+                return redirect(url_for('list_accounts'))
+
             rule = EmailRule(
                 email_credential_id=id,
                 name=request.form['name'],
@@ -453,7 +458,7 @@ def account_test_results(id, request_id):
             flash('Account not found!', 'danger')
             return redirect(url_for('list_accounts'))
 
-        dry_run_request = session.query(DryRunRequest).filter_by(id=request_id).first()
+        dry_run_request = session.query(DryRunRequest).filter_by(id=request_id, email_credential_id=id).first()
         if not dry_run_request:
             flash('Dry-run request not found!', 'danger')
             return redirect(url_for('account_rules', id=id))
@@ -489,7 +494,7 @@ def account_dry_run_status(id, request_id):
     """AJAX endpoint to check dry-run status."""
     session = db_service.get_session()
     try:
-        dry_run_request = session.query(DryRunRequest).filter_by(id=request_id).first()
+        dry_run_request = session.query(DryRunRequest).filter_by(id=request_id, email_credential_id=id).first()
         if not dry_run_request:
             return jsonify({'error': 'Request not found'}), 404
 
@@ -525,6 +530,11 @@ def account_add_label(id):
     if request.method == 'POST':
         session = db_service.get_session()
         try:
+            account = session.query(EmailCredential).filter_by(id=id).first()
+            if not account:
+                flash('Account not found!', 'danger')
+                return redirect(url_for('list_accounts'))
+
             label = Label(
                 credential_id=id,
                 name=request.form['name'],
