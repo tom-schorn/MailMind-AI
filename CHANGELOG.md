@@ -77,6 +77,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0-pre] - 2026-02-08
+
+### Added
+- show active auto-rules and learning info in spam settings UI
+- add spam folder learning monitor with auto-whitelist
+- add auto-rules creation for spam detection settings
+
+
 ## [1.9.0-pre] - 2026-02-08
 
 ### Added
