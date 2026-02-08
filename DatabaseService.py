@@ -168,7 +168,7 @@ class SpamConfig(Base):
     spam_folder: Mapped[str] = mapped_column(String(255), default='Spam')
     auto_categorize: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
-    changed_at: Mapped[DateTime] = mapped_column(DateTime, onupdate=func.current_timestamp())
+    changed_at: Mapped[DateTime] = mapped_column(DateTime, nullable=True, onupdate=func.current_timestamp())
 
 
 class SpamAnalysis(Base):
