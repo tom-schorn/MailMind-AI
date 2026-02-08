@@ -95,6 +95,20 @@
             </div>
           </form>
 
+          {% if spam_config and spam_config.enabled and auto_rules %}
+          <div class="alert alert-info mt-3">
+            <h6><i class="bi bi-robot"></i> Active Auto-Rules</h6>
+            <ul class="mb-0">
+              {% for rule in auto_rules %}
+              <li>{{ rule.name }} <small class="text-muted">({{ rule.monitored_folder }})</small></li>
+              {% endfor %}
+            </ul>
+            <small class="text-muted mt-1 d-block">
+              <i class="bi bi-lightbulb"></i> Learning: Emails moved out of {{ spam_config.spam_folder }} will auto-whitelist the sender domain.
+            </small>
+          </div>
+          {% endif %}
+
         </div>
       </div>
 
@@ -226,10 +240,13 @@
         <div class="card-body">
           <h5 class="card-title">Usage with Rules</h5>
           <p class="small text-muted">
-            After enabling spam detection, you can create rules using the <code>spam_score</code> and <code>spam_category</code> condition fields.
+            When spam detection is enabled, auto-rules are created to sort detected spam into the configured folder. You can also create custom rules using <code>spam_score</code> and <code>spam_category</code> condition fields.
           </p>
           <p class="small text-muted">
-            Example: <em>"IF spam_category equals phishing THEN move_to_folder Spam/Phishing"</em>
+            <strong>Auto-Categorize ON:</strong> 5 rules sort by category (Phishing, Scam, Spam, Malware, Adult) into subfolders.
+          </p>
+          <p class="small text-muted">
+            <strong>Auto-Categorize OFF:</strong> 1 rule moves all spam (score &gt; 0.5) to the spam folder.
           </p>
         </div>
       </div>
