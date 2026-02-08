@@ -77,6 +77,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0-pre] - 2026-02-08
+
+### Added
+- add spam detection web UI and API endpoints
+- integrate spam analysis into email processing pipeline
+- add spam detection database models and migration
+- add SpamService with Claude AI spam analysis pipeline
+
+### Fixed
+- make SpamConfig.changed_at nullable for initial insert
+
+
 ## [1.8.0-pre] - 2026-02-08
 
 ### Added
