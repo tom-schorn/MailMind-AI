@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Label - MailMind AI{% endblock %}
+
+{% block page_title %}Edit Label{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('list_labels') }}">Labels</a></li>
+<li class="breadcrumb-item active">Edit</li>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="row">
+    <div class="col-lg-8">
+
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Edit Label</h5>
+
+          <form class="row g-3" method="POST" action="{{ url_for('edit_label_page', id=label.id) }}">
+            <div class="col-md-12">
+              <label for="credential_id" class="form-label">Email Account</label>
+              <select class="form-select" id="credential_id" name="credential_id" disabled>
+                {% for account in accounts %}
+                <option value="{{ account.id }}" {% if account.id == label.credential_id %}selected{% endif %}>{{ account.email_address }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Account cannot be changed after creation.</div>
+            </div>
+
+            <div class="col-md-8">
+              <label for="name" class="form-label">Label Name</label>
+              <input type="text" class="form-control" id="name" name="name" value="{{ label.name }}" required>
+            </div>
+
+            <div class="col-md-4">
+              <label for="color" class="form-label">Color</label>
+              <input type="color" class="form-control form-control-color" id="color" name="color" value="{{ label.color or '#0d6efd' }}">
+            </div>
+
+            <div class="text-center">
+              <button type="submit" class="btn btn-primary">Update Label</button>
+              <a href="{{ url_for('list_labels') }}" class="btn btn-secondary">Cancel</a>
+            </div>
+          </form>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+{% endblock %}

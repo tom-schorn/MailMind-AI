@@ -328,6 +328,42 @@ class IMAPClient:
             self.logger.error(f"Failed to add flag {flag} to email {uid}: {e}")
             raise
 
+    def get_flags(self, folder: str = 'INBOX') -> list[str]:
+        """
+        Scan messages and collect custom IMAP flags.
+
+        Args:
+            folder: Folder to scan
+
+        Returns:
+            Sorted, deduplicated list of custom flag names
+        """
+        if not self.connected:
+            raise ConnectionError("Not connected to IMAP server")
+
+        standard_flags = {'\\Seen', '\\Answered', '\\Flagged', '\\Deleted', '\\Draft', '\\Recent'}
+
+        try:
+            self.mailbox.folder.set(folder)
+            custom_flags = set()
+            count = 0
+
+            for msg in self.mailbox.fetch(AND(all=True), mark_seen=False, headers_only=True):
+                if hasattr(msg, 'flags') and msg.flags:
+                    for flag in msg.flags:
+                        if flag not in standard_flags:
+                            custom_flags.add(flag)
+                count += 1
+                if count >= 200:
+                    break
+
+            self.logger.debug(f"Found {len(custom_flags)} custom flags in {folder}")
+            return sorted(custom_flags)
+
+        except Exception as e:
+            self.logger.error(f"Failed to get flags from {folder}: {e}")
+            raise
+
     def delete_email(self, uid: str) -> None:
         """Delete email (move to trash or permanent delete)."""
         if not self.connected:
@@ -514,7 +550,7 @@ class ConditionEvaluator:
             self.logger.error(f"Error evaluating condition: {e}")
             return False, f"Error: {str(e)}"
 
-    def _extract_field_value(self, email: EmailMessage, condition: RuleCondition) -> str:
+    def _extract_field_value(self, email: EmailMessage, condition: RuleCondition) -> Optional[str]:
         """Extract field value from email based on condition field."""
         field = condition.field.lower()
 
@@ -526,6 +562,11 @@ class ConditionEvaluator:
             return email.body_text if email.body_text else email.body_html
         elif field == 'to':
             return ', '.join(email.recipients)
+        elif field == 'date':
+            return email.date.isoformat() if email.date else ''
+        elif field == 'label':
+            flags = list(email.raw_message.flags) if hasattr(email.raw_message, 'flags') and email.raw_message.flags else []
+            return ','.join(flags)
         elif field == 'header':
             header_name = condition.value.split(':')[0] if ':' in condition.value else condition.value
             return email.headers.get(header_name, '')
@@ -582,6 +623,21 @@ class ConditionEvaluator:
                 return age.days > days
             except ValueError:
                 return False
+
+        elif operator == 'date_before':
+            try:
+                cutoff = datetime.strptime(compare_value, '%Y-%m-%d')
+                return email_date < cutoff
+            except ValueError:
+                return False
+
+        elif operator == 'has_label':
+            flags = [f.strip() for f in field_value.split(',') if f.strip()]
+            return compare_value in flags
+
+        elif operator == 'not_has_label':
+            flags = [f.strip() for f in field_value.split(',') if f.strip()]
+            return compare_value not in flags
 
         else:
             self.logger.warning(f"Unknown operator: {operator}")

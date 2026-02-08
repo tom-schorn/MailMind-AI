@@ -2,8 +2,9 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, DatabaseService
-from DatabaseService import DryRunRequest, DryRunResult, ServiceStatus
+from DatabaseService import DryRunRequest, DryRunResult, ServiceStatus, Label
 import os
+import re
 import json
 import threading
 from datetime import datetime, timedelta
@@ -415,6 +416,252 @@ def delete_rule(id):
     return redirect(url_for('list_rules'))
 
 
+# Label Management
+@app.route('/labels')
+def list_labels():
+    session = db_service.get_session()
+    try:
+        accounts = session.query(EmailCredential).all()
+        labels = session.query(Label).all()
+        return render_template('labels/list.html', labels=labels, accounts=accounts)
+    finally:
+        session.close()
+
+
+@app.route('/labels/add', methods=['GET', 'POST'])
+def add_label_page():
+    if request.method == 'POST':
+        session = db_service.get_session()
+        try:
+            label = Label(
+                credential_id=int(request.form['credential_id']),
+                name=request.form['name'],
+                color=request.form.get('color', '#0d6efd'),
+                is_imap_flag=False
+            )
+            session.add(label)
+            session.commit()
+            flash('Label created successfully!', 'success')
+            return redirect(url_for('list_labels'))
+        except Exception as e:
+            session.rollback()
+            flash(f'Error creating label: {str(e)}', 'danger')
+        finally:
+            session.close()
+
+    session = db_service.get_session()
+    try:
+        accounts = session.query(EmailCredential).all()
+        return render_template('labels/add.html', accounts=accounts)
+    finally:
+        session.close()
+
+
+@app.route('/labels/edit/<int:id>', methods=['GET', 'POST'])
+def edit_label_page(id):
+    session = db_service.get_session()
+    try:
+        label = session.query(Label).filter_by(id=id).first()
+        if not label:
+            flash('Label not found!', 'danger')
+            return redirect(url_for('list_labels'))
+
+        if request.method == 'POST':
+            label.name = request.form['name']
+            label.color = request.form.get('color', '#0d6efd')
+            session.commit()
+            flash('Label updated successfully!', 'success')
+            return redirect(url_for('list_labels'))
+
+        accounts = session.query(EmailCredential).all()
+        return render_template('labels/edit.html', label=label, accounts=accounts)
+    except Exception as e:
+        session.rollback()
+        flash(f'Error updating label: {str(e)}', 'danger')
+        return redirect(url_for('list_labels'))
+    finally:
+        session.close()
+
+
+@app.route('/labels/delete/<int:id>', methods=['POST'])
+def delete_label(id):
+    session = db_service.get_session()
+    try:
+        label = session.query(Label).filter_by(id=id).first()
+        if label:
+            session.delete(label)
+            session.commit()
+            flash('Label deleted successfully!', 'success')
+        else:
+            flash('Label not found!', 'danger')
+    except Exception as e:
+        session.rollback()
+        flash(f'Error deleting label: {str(e)}', 'danger')
+    finally:
+        session.close()
+    return redirect(url_for('list_labels'))
+
+
+# Label API endpoints
+@app.route('/api/labels/<int:credential_id>')
+def get_labels(credential_id):
+    """Get labels for a credential."""
+    session = db_service.get_session()
+    try:
+        labels = session.query(Label).filter_by(credential_id=credential_id).all()
+        return jsonify({
+            'status': 'success',
+            'labels': [{'id': l.id, 'name': l.name, 'color': l.color, 'is_imap_flag': l.is_imap_flag} for l in labels]
+        })
+    finally:
+        session.close()
+
+
+@app.route('/api/labels/<int:credential_id>', methods=['POST'])
+def create_label(credential_id):
+    """Create a new label."""
+    session = db_service.get_session()
+    try:
+        data = request.get_json()
+        label = Label(
+            credential_id=credential_id,
+            name=data['name'],
+            color=data.get('color', '#0d6efd'),
+            is_imap_flag=False
+        )
+        session.add(label)
+        session.commit()
+        return jsonify({
+            'status': 'success',
+            'label': {'id': label.id, 'name': label.name, 'color': label.color}
+        })
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/api/labels/update/<int:label_id>', methods=['PUT'])
+def update_label(label_id):
+    """Update a label."""
+    session = db_service.get_session()
+    try:
+        label = session.query(Label).filter_by(id=label_id).first()
+        if not label:
+            return jsonify({'error': 'Label not found'}), 404
+
+        data = request.get_json()
+        if 'name' in data:
+            label.name = data['name']
+        if 'color' in data:
+            label.color = data['color']
+
+        session.commit()
+        return jsonify({'status': 'success', 'label': {'id': label.id, 'name': label.name, 'color': label.color}})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/api/labels/delete/<int:label_id>', methods=['DELETE'])
+def delete_label_api(label_id):
+    """Delete a label."""
+    session = db_service.get_session()
+    try:
+        label = session.query(Label).filter_by(id=label_id).first()
+        if not label:
+            return jsonify({'error': 'Label not found'}), 404
+        session.delete(label)
+        session.commit()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/api/flags/<int:credential_id>')
+def get_flags(credential_id):
+    """Get IMAP flags from server."""
+    session = db_service.get_session()
+    try:
+        credential = session.query(EmailCredential).filter_by(id=credential_id).first()
+        if not credential:
+            return jsonify({'error': 'Credential not found'}), 404
+
+        config = load_config()
+        from LoggingService import LoggingService
+        logger = LoggingService.setup(config)
+        from EMailService import IMAPClient
+
+        imap_client = IMAPClient(credential, config, logger)
+        imap_client.connect()
+
+        try:
+            flags = imap_client.get_flags()
+            return jsonify({'status': 'success', 'flags': flags})
+        finally:
+            imap_client.disconnect()
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/labels/sync/<int:credential_id>', methods=['POST'])
+def sync_labels_from_imap(credential_id):
+    """Sync labels from IMAP flags."""
+    session = db_service.get_session()
+    try:
+        credential = session.query(EmailCredential).filter_by(id=credential_id).first()
+        if not credential:
+            flash('Credential not found!', 'danger')
+            return redirect(url_for('list_labels'))
+
+        config = load_config()
+        from LoggingService import LoggingService
+        logger = LoggingService.setup(config)
+        from EMailService import IMAPClient
+
+        imap_client = IMAPClient(credential, config, logger)
+        imap_client.connect()
+
+        try:
+            flags = imap_client.get_flags()
+            existing_labels = session.query(Label).filter_by(credential_id=credential_id).all()
+            existing_names = {l.name for l in existing_labels}
+
+            synced = 0
+            for flag in flags:
+                if flag not in existing_names:
+                    label = Label(
+                        credential_id=credential_id,
+                        name=flag,
+                        color='#6c757d',
+                        is_imap_flag=True
+                    )
+                    session.add(label)
+                    synced += 1
+
+            session.commit()
+            flash(f'Synced {synced} new labels from IMAP flags.', 'success')
+        finally:
+            imap_client.disconnect()
+
+    except Exception as e:
+        session.rollback()
+        flash(f'Error syncing labels: {str(e)}', 'danger')
+    finally:
+        session.close()
+
+    return redirect(url_for('list_labels'))
+
+
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
     if request.method == 'POST':
@@ -753,6 +1000,112 @@ def test_rule_preview():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+def parse_log_file(path: str, level_filter: str = None, search_filter: str = None) -> list:
+    """Parse log file and return structured entries."""
+    log_pattern = re.compile(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - (\S+) - (\w+) - (.*)$')
+    entries = []
+
+    if not os.path.exists(path):
+        return entries
+
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                match = log_pattern.match(line)
+                if match:
+                    timestamp, logger, level, message = match.groups()
+                    if level_filter and level.upper() != level_filter.upper():
+                        continue
+                    if search_filter and search_filter.lower() not in message.lower():
+                        continue
+                    entries.append({
+                        'timestamp': timestamp,
+                        'logger': logger,
+                        'level': level,
+                        'message': message
+                    })
+    except Exception:
+        pass
+
+    return entries
+
+
+@app.route('/api/logs')
+def get_logs():
+    """Get log entries with optional filtering."""
+    level = request.args.get('level', '')
+    search = request.args.get('search', '')
+    limit = int(request.args.get('limit', 500))
+
+    config = load_config()
+    log_path = config.get('log_file_path', 'logs/mailmind.log')
+
+    entries = parse_log_file(log_path, level or None, search or None)
+
+    # Return last N entries (newest last)
+    if len(entries) > limit:
+        entries = entries[-limit:]
+
+    return jsonify({
+        'status': 'success',
+        'entries': entries,
+        'total': len(entries)
+    })
+
+
+@app.route('/api/logs/export/csv')
+def export_logs_csv():
+    """Export logs as CSV."""
+    import csv
+    import io
+
+    level = request.args.get('level', '')
+    search = request.args.get('search', '')
+
+    config = load_config()
+    log_path = config.get('log_file_path', 'logs/mailmind.log')
+
+    entries = parse_log_file(log_path, level or None, search or None)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Timestamp', 'Logger', 'Level', 'Message'])
+    for entry in entries:
+        writer.writerow([entry['timestamp'], entry['logger'], entry['level'], entry['message']])
+
+    response = app.response_class(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=mailmind-logs.csv'}
+    )
+    return response
+
+
+@app.route('/api/logs/export/jsonl')
+def export_logs_jsonl():
+    """Export logs as JSONL."""
+    level = request.args.get('level', '')
+    search = request.args.get('search', '')
+
+    config = load_config()
+    log_path = config.get('log_file_path', 'logs/mailmind.log')
+
+    entries = parse_log_file(log_path, level or None, search or None)
+
+    lines = [json.dumps(entry) for entry in entries]
+    content = '\n'.join(lines)
+
+    response = app.response_class(
+        content,
+        mimetype='application/jsonl',
+        headers={'Content-Disposition': 'attachment; filename=mailmind-logs.jsonl'}
+    )
+    return response
 
 
 if __name__ == '__main__':

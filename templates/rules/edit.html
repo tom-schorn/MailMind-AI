@@ -79,16 +79,18 @@
                 <div class="condition-row mb-2">
                   <div class="row g-2">
                     <div class="col-md-3">
-                      <select name="condition_field_{{ loop.index0 }}" class="form-select" required>
+                      <select name="condition_field_{{ loop.index0 }}" class="form-select condition-field-select" required onchange="onConditionFieldChange(this)">
                         <option value="from" {% if cond.field == 'from' %}selected{% endif %}>From</option>
                         <option value="subject" {% if cond.field == 'subject' %}selected{% endif %}>Subject</option>
                         <option value="body" {% if cond.field == 'body' %}selected{% endif %}>Body</option>
                         <option value="to" {% if cond.field == 'to' %}selected{% endif %}>To</option>
                         <option value="header" {% if cond.field == 'header' %}selected{% endif %}>Header</option>
+                        <option value="date" {% if cond.field == 'date' %}selected{% endif %}>Date</option>
+                        <option value="label" {% if cond.field == 'label' %}selected{% endif %}>Label</option>
                       </select>
                     </div>
                     <div class="col-md-3">
-                      <select name="condition_operator_{{ loop.index0 }}" class="form-select" required>
+                      <select name="condition_operator_{{ loop.index0 }}" class="form-select condition-operator-select" required>
                         <option value="contains" {% if cond.operator == 'contains' %}selected{% endif %}>contains</option>
                         <option value="equals" {% if cond.operator == 'equals' %}selected{% endif %}>equals</option>
                         <option value="not_equals" {% if cond.operator == 'not_equals' %}selected{% endif %}>not equals</option>
@@ -98,11 +100,14 @@
                         <option value="less_than" {% if cond.operator == 'less_than' %}selected{% endif %}>less than</option>
                         <option value="greater_equal" {% if cond.operator == 'greater_equal' %}selected{% endif %}>greater or equal</option>
                         <option value="less_equal" {% if cond.operator == 'less_equal' %}selected{% endif %}>less or equal</option>
-                        <option value="date_older_than" {% if cond.operator == 'date_older_than' %}selected{% endif %}>date older than (days)</option>
+                        <option value="date_older_than" {% if cond.operator == 'date_older_than' %}selected{% endif %}>older than (days)</option>
+                        <option value="date_before" {% if cond.operator == 'date_before' %}selected{% endif %}>before (date)</option>
+                        <option value="has_label" {% if cond.operator == 'has_label' %}selected{% endif %}>has label</option>
+                        <option value="not_has_label" {% if cond.operator == 'not_has_label' %}selected{% endif %}>does not have label</option>
                       </select>
                     </div>
                     <div class="col-md-5">
-                      <input type="text" name="condition_value_{{ loop.index0 }}" class="form-control" placeholder="Value" value="{{ cond.value }}" required>
+                      <input type="text" name="condition_value_{{ loop.index0 }}" class="form-control condition-value-input" placeholder="Value" value="{{ cond.value }}" required>
                     </div>
                     <div class="col-md-1">
                       <button type="button" class="btn btn-danger btn-sm" onclick="removeCondition(this)">
@@ -179,6 +184,32 @@
 
     </div>
   </div>
+
+  <!-- Create Label Modal -->
+  <div class="modal fade" id="createLabelModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Create New Label</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="new-label-name" class="form-label">Label Name</label>
+            <input type="text" class="form-control" id="new-label-name" required>
+          </div>
+          <div class="mb-3">
+            <label for="new-label-color" class="form-label">Color</label>
+            <input type="color" class="form-control form-control-color" id="new-label-color" value="#0d6efd">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="saveNewLabel()">Create</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </section>
 {% endblock %}
 
@@ -186,22 +217,258 @@
 <script>
 let conditionIndex = {{ rule.conditions|length }};
 let actionIndex = {{ rule.rule_actions|length }};
+let cachedFolders = null;
+let cachedCredentialId = null;
+
+function fetchFoldersIfNeeded(credentialId) {
+  if (cachedFolders && cachedCredentialId === credentialId) {
+    return Promise.resolve(cachedFolders);
+  }
+  return fetch(`/api/folders/${credentialId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) throw data.error;
+      cachedFolders = data.folders;
+      cachedCredentialId = credentialId;
+      return data.folders;
+    });
+}
+
+let cachedLabels = null;
+let labelTargetElement = null;
+
+function fetchLabelsIfNeeded(credentialId) {
+  if (cachedLabels && cachedCredentialId === credentialId) {
+    return Promise.resolve(cachedLabels);
+  }
+  return fetch(`/api/labels/${credentialId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) throw data.error;
+      cachedLabels = data.labels;
+      return data.labels;
+    });
+}
+
+function buildLabelSelect(inputName, currentValue, onChange) {
+  const credentialId = document.getElementById('email_account_id').value;
+  if (!credentialId) return null;
+
+  const sel = document.createElement('select');
+  sel.name = inputName;
+  sel.className = 'form-select condition-value-input';
+  sel.required = true;
+  if (onChange) sel.addEventListener('change', onChange);
+
+  fetchLabelsIfNeeded(credentialId).then(labels => {
+    sel.innerHTML = '';
+    labels.forEach(label => {
+      const opt = document.createElement('option');
+      opt.value = label.name;
+      opt.textContent = label.name;
+      if (label.name === currentValue) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    const createOpt = document.createElement('option');
+    createOpt.value = '__create_new__';
+    createOpt.textContent = '+ Create New Label...';
+    sel.appendChild(createOpt);
+  });
+
+  return sel;
+}
+
+function buildLabelSelectForAction(inputName, currentValue) {
+  const credentialId = document.getElementById('email_account_id').value;
+  if (!credentialId) return null;
+
+  const sel = document.createElement('select');
+  sel.name = inputName;
+  sel.className = 'form-select action-value';
+  sel.required = true;
+
+  fetchLabelsIfNeeded(credentialId).then(labels => {
+    sel.innerHTML = '';
+    labels.forEach(label => {
+      const opt = document.createElement('option');
+      opt.value = label.name;
+      opt.textContent = label.name;
+      if (label.name === currentValue) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    const createOpt = document.createElement('option');
+    createOpt.value = '__create_new__';
+    createOpt.textContent = '+ Create New Label...';
+    sel.appendChild(createOpt);
+  });
+
+  sel.addEventListener('change', function() {
+    if (this.value === '__create_new__') {
+      labelTargetElement = this;
+      new bootstrap.Modal(document.getElementById('createLabelModal')).show();
+    }
+  });
+
+  return sel;
+}
+
+function saveNewLabel() {
+  const credentialId = document.getElementById('email_account_id').value;
+  const name = document.getElementById('new-label-name').value.trim();
+  const color = document.getElementById('new-label-color').value;
+
+  if (!name) { alert('Please enter a label name.'); return; }
+  if (!credentialId) { alert('Please select an email account first.'); return; }
+
+  fetch(`/api/labels/${credentialId}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: name, color: color})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) { alert('Error: ' + data.error); return; }
+
+    cachedLabels = null;
+    bootstrap.Modal.getInstance(document.getElementById('createLabelModal')).hide();
+    document.getElementById('new-label-name').value = '';
+
+    if (labelTargetElement) {
+      const targetSelect = labelTargetElement;
+      fetchLabelsIfNeeded(credentialId).then(labels => {
+        targetSelect.innerHTML = '';
+        labels.forEach(label => {
+          const opt = document.createElement('option');
+          opt.value = label.name;
+          opt.textContent = label.name;
+          if (label.name === name) opt.selected = true;
+          targetSelect.appendChild(opt);
+        });
+        const createOpt = document.createElement('option');
+        createOpt.value = '__create_new__';
+        createOpt.textContent = '+ Create New Label...';
+        targetSelect.appendChild(createOpt);
+      });
+      labelTargetElement = null;
+    }
+  })
+  .catch(err => alert('Error creating label: ' + err));
+}
+
+const standardOperators = [
+  {value: 'contains', text: 'contains'},
+  {value: 'equals', text: 'equals'},
+  {value: 'not_equals', text: 'not equals'},
+  {value: 'starts_with', text: 'starts with'},
+  {value: 'ends_with', text: 'ends with'},
+  {value: 'greater_than', text: 'greater than'},
+  {value: 'less_than', text: 'less than'},
+  {value: 'greater_equal', text: 'greater or equal'},
+  {value: 'less_equal', text: 'less or equal'},
+  {value: 'date_older_than', text: 'older than (days)'},
+  {value: 'date_before', text: 'before (date)'}
+];
+
+const dateOperators = [
+  {value: 'date_older_than', text: 'older than (days)'},
+  {value: 'date_before', text: 'before (date)'}
+];
+
+const labelOperators = [
+  {value: 'has_label', text: 'has label'},
+  {value: 'not_has_label', text: 'does not have label'}
+];
+
+function onConditionFieldChange(fieldSelect) {
+  const row = fieldSelect.closest('.condition-row');
+  const operatorSelect = row.querySelector('.condition-operator-select');
+  const field = fieldSelect.value;
+  const currentOp = operatorSelect.value;
+
+  let operators;
+  if (field === 'date') {
+    operators = dateOperators;
+  } else if (field === 'label') {
+    operators = labelOperators;
+  } else {
+    operators = standardOperators;
+  }
+
+  operatorSelect.innerHTML = '';
+  operators.forEach(op => {
+    const option = document.createElement('option');
+    option.value = op.value;
+    option.textContent = op.text;
+    if (op.value === currentOp) option.selected = true;
+    operatorSelect.appendChild(option);
+  });
+
+  updateConditionValueInput(row);
+}
+
+function updateConditionValueInput(row) {
+  const operatorSelect = row.querySelector('.condition-operator-select');
+  const valueContainer = row.querySelector('.col-md-5');
+  const operator = operatorSelect.value;
+  const existingInput = valueContainer.querySelector('[name^="condition_value_"]');
+  const inputName = existingInput.name;
+  const currentValue = existingInput.value;
+  const fieldSelect = row.querySelector('.condition-field-select');
+  const field = fieldSelect ? fieldSelect.value : '';
+
+  if (operator === 'date_before') {
+    if (existingInput.type !== 'date') {
+      const dateInput = document.createElement('input');
+      dateInput.type = 'date';
+      dateInput.name = inputName;
+      dateInput.className = 'form-control condition-value-input';
+      dateInput.required = true;
+      dateInput.value = currentValue;
+      existingInput.replaceWith(dateInput);
+    }
+  } else if (field === 'label') {
+    const sel = buildLabelSelect(inputName, currentValue, function() {
+      if (this.value === '__create_new__') {
+        labelTargetElement = this;
+        new bootstrap.Modal(document.getElementById('createLabelModal')).show();
+      }
+    });
+    if (sel) {
+      existingInput.replaceWith(sel);
+    }
+  } else {
+    if (existingInput.type === 'date') {
+      const textInput = document.createElement('input');
+      textInput.type = 'text';
+      textInput.name = inputName;
+      textInput.className = 'form-control condition-value-input';
+      textInput.placeholder = operator === 'date_older_than' ? 'Days (e.g. 30)' : 'Value';
+      textInput.required = true;
+      textInput.value = currentValue;
+      existingInput.replaceWith(textInput);
+    } else {
+      existingInput.placeholder = operator === 'date_older_than' ? 'Days (e.g. 30)' : 'Value';
+    }
+  }
+}
 
 function addCondition() {
   const html = `
     <div class="condition-row mb-2">
       <div class="row g-2">
         <div class="col-md-3">
-          <select name="condition_field_${conditionIndex}" class="form-select" required>
+          <select name="condition_field_${conditionIndex}" class="form-select condition-field-select" required onchange="onConditionFieldChange(this)">
             <option value="from">From</option>
             <option value="subject">Subject</option>
             <option value="body">Body</option>
             <option value="to">To</option>
             <option value="header">Header</option>
+            <option value="date">Date</option>
+            <option value="label">Label</option>
           </select>
         </div>
         <div class="col-md-3">
-          <select name="condition_operator_${conditionIndex}" class="form-select" required>
+          <select name="condition_operator_${conditionIndex}" class="form-select condition-operator-select" required>
             <option value="contains">contains</option>
             <option value="equals">equals</option>
             <option value="not_equals">not equals</option>
@@ -211,11 +478,12 @@ function addCondition() {
             <option value="less_than">less than</option>
             <option value="greater_equal">greater or equal</option>
             <option value="less_equal">less or equal</option>
-            <option value="date_older_than">date older than (days)</option>
+            <option value="date_older_than">older than (days)</option>
+            <option value="date_before">before (date)</option>
           </select>
         </div>
         <div class="col-md-5">
-          <input type="text" name="condition_value_${conditionIndex}" class="form-control" placeholder="Value" required>
+          <input type="text" name="condition_value_${conditionIndex}" class="form-control condition-value-input" placeholder="Value" required>
         </div>
         <div class="col-md-1">
           <button type="button" class="btn btn-danger btn-sm" onclick="removeCondition(this)">
@@ -239,11 +507,12 @@ function removeCondition(button) {
 }
 
 function addAction() {
+  const idx = actionIndex;
   const html = `
     <div class="action-row mb-2">
       <div class="row g-2">
         <div class="col-md-3">
-          <select name="action_type_${actionIndex}" class="form-select action-type-select" required onchange="toggleActionFields(this)">
+          <select name="action_type_${idx}" class="form-select action-type-select" required onchange="toggleActionFields(this)">
             <option value="move_to_folder">Move to Folder</option>
             <option value="copy_to_folder">Copy to Folder</option>
             <option value="add_label">Add Label</option>
@@ -253,7 +522,7 @@ function addAction() {
           </select>
         </div>
         <div class="col-md-8">
-          <input type="text" name="action_value_${actionIndex}" class="form-control action-value" placeholder="Folder/Label/Subject Pattern" required>
+          <input type="text" name="action_value_${idx}" class="form-control action-value" placeholder="Folder/Label/Subject Pattern" required>
         </div>
         <div class="col-md-1">
           <button type="button" class="btn btn-danger btn-sm" onclick="removeAction(this)">
@@ -265,6 +534,9 @@ function addAction() {
   `;
   document.getElementById('actions-container').insertAdjacentHTML('beforeend', html);
   actionIndex++;
+  // Init the new action row - default is move_to_folder, so load folder select
+  const newRow = document.getElementById('actions-container').lastElementChild;
+  toggleActionFields(newRow.querySelector('.action-type-select'));
 }
 
 function removeAction(button) {
@@ -278,23 +550,99 @@ function removeAction(button) {
 
 function toggleActionFields(select) {
   const row = select.closest('.action-row');
-  const valueInput = row.querySelector('.action-value');
+  const valueContainer = row.querySelector('.col-md-8');
+  const existingEl = valueContainer.querySelector('.action-value');
   const actionType = select.value;
+  const elName = existingEl.name;
+  const currentValue = existingEl.value;
 
   if (actionType === 'mark_as_read' || actionType === 'delete') {
-    valueInput.style.display = 'none';
-    valueInput.removeAttribute('required');
+    if (existingEl.tagName === 'SELECT') {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.name = elName;
+      input.className = 'form-control action-value';
+      existingEl.replaceWith(input);
+    }
+    const el = valueContainer.querySelector('.action-value');
+    el.style.display = 'none';
+    el.removeAttribute('required');
+    el.value = '';
+  } else if (actionType === 'move_to_folder' || actionType === 'copy_to_folder') {
+    const credentialId = document.getElementById('email_account_id').value;
+    if (credentialId) {
+      fetchFoldersIfNeeded(credentialId).then(folders => {
+        const sel = document.createElement('select');
+        sel.name = elName;
+        sel.className = 'form-select action-value';
+        sel.required = true;
+        folders.forEach(folder => {
+          if (folder.selectable) {
+            const opt = document.createElement('option');
+            opt.value = folder.name;
+            opt.textContent = folder.name;
+            if (folder.name === currentValue) opt.selected = true;
+            sel.appendChild(opt);
+          }
+        });
+        existingEl.replaceWith(sel);
+      });
+    } else {
+      if (existingEl.tagName === 'SELECT') {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.name = elName;
+        input.className = 'form-control action-value';
+        input.placeholder = 'Folder path (e.g., INBOX/Spam)';
+        input.required = true;
+        input.value = currentValue;
+        existingEl.replaceWith(input);
+      } else {
+        existingEl.style.display = 'block';
+        existingEl.setAttribute('required', 'required');
+        existingEl.placeholder = 'Folder path (e.g., INBOX/Spam)';
+      }
+    }
+  } else if (actionType === 'add_label') {
+    const credentialId = document.getElementById('email_account_id').value;
+    if (credentialId) {
+      const labelSel = buildLabelSelectForAction(elName, currentValue);
+      if (labelSel) {
+        existingEl.replaceWith(labelSel);
+        return;
+      }
+    }
+    if (existingEl.tagName === 'SELECT') {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.name = elName;
+      input.className = 'form-control action-value';
+      input.placeholder = 'Label name';
+      input.required = true;
+      input.value = currentValue;
+      existingEl.replaceWith(input);
+    } else {
+      existingEl.style.display = 'block';
+      existingEl.setAttribute('required', 'required');
+      existingEl.placeholder = 'Label name';
+    }
   } else {
-    valueInput.style.display = 'block';
-    valueInput.setAttribute('required', 'required');
-
-    // Update placeholder
-    if (actionType === 'move_to_folder' || actionType === 'copy_to_folder') {
-      valueInput.placeholder = 'Folder path (e.g., INBOX/Spam)';
-    } else if (actionType === 'add_label') {
-      valueInput.placeholder = 'Label name';
-    } else if (actionType === 'modify_subject') {
-      valueInput.placeholder = 'New subject pattern';
+    if (existingEl.tagName === 'SELECT') {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.name = elName;
+      input.className = 'form-control action-value';
+      input.required = true;
+      input.value = currentValue;
+      existingEl.replaceWith(input);
+    }
+    const el = valueContainer.querySelector('.action-value');
+    el.style.display = 'block';
+    el.setAttribute('required', 'required');
+    if (actionType === 'modify_subject') {
+      el.placeholder = 'New subject pattern';
+    } else {
+      el.placeholder = 'Value';
     }
   }
 }
@@ -303,6 +651,14 @@ function toggleActionFields(select) {
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.action-type-select').forEach(select => {
     toggleActionFields(select);
+  });
+  document.querySelectorAll('.condition-field-select').forEach(select => {
+    onConditionFieldChange(select);
+  });
+  document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('condition-operator-select')) {
+      updateConditionValueInput(e.target.closest('.condition-row'));
+    }
   });
 });
 
@@ -319,14 +675,16 @@ function testRule() {
   document.querySelectorAll('.condition-row').forEach((row, index) => {
     const field = row.querySelector(`select[name^="condition_field_"]`).value;
     const operator = row.querySelector(`select[name^="condition_operator_"]`).value;
-    const value = row.querySelector(`input[name^="condition_value_"]`).value;
+    const valueEl = row.querySelector(`[name^="condition_value_"]`);
+    const value = valueEl ? valueEl.value : '';
     conditions.push({ field, operator, value });
   });
 
   const actions = [];
   document.querySelectorAll('.action-row').forEach((row, index) => {
     const actionType = row.querySelector(`select[name^="action_type_"]`).value;
-    const actionValue = row.querySelector(`input[name^="action_value_"]`).value || '';
+    const actionValueEl = row.querySelector(`[name^="action_value_"]`);
+    const actionValue = actionValueEl ? actionValueEl.value : '';
     actions.push({ action_type: actionType, action_value: actionValue });
   });
 
