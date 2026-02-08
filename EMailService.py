@@ -272,6 +272,17 @@ class IMAPClient:
             self.logger.error(f"Failed to get unseen UIDs from {folder}: {e}")
             raise
 
+    def fetch_senders(self, folder: str) -> dict[str, str]:
+        """Fetch UIDs and sender addresses from folder using headers only."""
+        if not self.connected:
+            raise ConnectionError("Not connected to IMAP server")
+
+        self.mailbox.folder.set(folder)
+        result = {}
+        for msg in self.mailbox.fetch(AND(all=True), mark_seen=False, headers_only=True):
+            result[msg.uid] = msg.from_ or ""
+        return result
+
     def move_to_folder(self, uid: str, folder: str) -> None:
         """Move email to another folder."""
         if not self.connected:
@@ -1163,6 +1174,32 @@ class ServiceManager:
             return None
 
 
+def _extract_domain(sender: str) -> Optional[str]:
+    """Extract domain from email sender (e.g. 'Name <user@example.com>' -> 'example.com')."""
+    if not sender:
+        return None
+    match = re.search(r'@([\w.-]+)', sender)
+    return match.group(1).lower() if match else None
+
+
+def _auto_whitelist_domain(credential_id: int, domain: str, session_factory) -> None:
+    """Add domain to whitelist if not already present."""
+    session = session_factory()
+    try:
+        existing = session.query(WhitelistEntry).filter_by(
+            credential_id=credential_id, domain=domain
+        ).first()
+        if not existing:
+            session.add(WhitelistEntry(
+                credential_id=credential_id,
+                domain=domain,
+                reason="Auto-learned: moved out of spam"
+            ))
+            session.commit()
+    finally:
+        session.close()
+
+
 class EMailService:
     """Main email service orchestrator."""
 
@@ -1318,6 +1355,22 @@ class EMailService:
                 folder_thread.start()
                 folder_threads.append(folder_thread)
 
+            # Spam Learning Monitor (if spam enabled)
+            spam_monitor_thread = None
+            session = self.session_factory()
+            try:
+                spam_config = session.query(SpamConfig).filter_by(credential_id=credential.id).first()
+                if spam_config and spam_config.enabled:
+                    spam_monitor_thread = threading.Thread(
+                        target=self._spam_learning_monitor,
+                        args=(credential, spam_config, credential_stop),
+                        daemon=True,
+                        name=f"SpamLearning-{credential.email_address}"
+                    )
+                    spam_monitor_thread.start()
+            finally:
+                session.close()
+
             # Poll for reload signals every 10 seconds
             while not self.stop_event.is_set():
                 if self.stop_event.wait(timeout=10):
@@ -1334,10 +1387,12 @@ class EMailService:
                         session.delete(signal)
                         session.commit()
 
-                        # Stop current folder watchers
+                        # Stop current folder watchers and spam monitor
                         credential_stop.set()
                         for thread in folder_threads:
                             thread.join(timeout=5)
+                        if spam_monitor_thread:
+                            spam_monitor_thread.join(timeout=5)
 
                         break  # Restart outer loop with new folder set
                 finally:
@@ -1347,7 +1402,65 @@ class EMailService:
                 credential_stop.set()
                 for thread in folder_threads:
                     thread.join(timeout=5)
+                if spam_monitor_thread:
+                    spam_monitor_thread.join(timeout=5)
                 break
+
+    def _spam_learning_monitor(self, credential: EmailCredential, spam_config, credential_stop: threading.Event) -> None:
+        """Monitor spam folder for removed emails and auto-whitelist sender domain."""
+        self.logger.info(f"Starting spam learning monitor for {credential.email_address}")
+
+        imap = IMAPClient(credential, self.config, self.logger)
+        try:
+            imap.connect()
+        except Exception as e:
+            self.logger.error(f"Spam learning monitor failed to connect: {e}")
+            return
+
+        # Collect all spam folders
+        spam_folders = [spam_config.spam_folder]
+        if spam_config.auto_categorize:
+            for subfolder in ["Phishing", "Scam", "General", "Malware", "Adult"]:
+                spam_folders.append(f"{spam_config.spam_folder}/{subfolder}")
+
+        # Initial cache: {folder: {uid: sender}}
+        uid_cache = {}
+        for folder in spam_folders:
+            try:
+                uid_cache[folder] = imap.fetch_senders(folder)
+            except Exception:
+                uid_cache[folder] = {}
+
+        self.logger.info(f"Spam learning monitor initialized for {credential.email_address}, watching {len(spam_folders)} folders")
+
+        # Poll loop (60s interval)
+        while not credential_stop.is_set():
+            if credential_stop.wait(timeout=60):
+                break
+
+            for folder in spam_folders:
+                try:
+                    current = imap.fetch_senders(folder)
+                    previous = uid_cache.get(folder, {})
+
+                    removed_uids = set(previous.keys()) - set(current.keys())
+                    for uid in removed_uids:
+                        sender = previous[uid]
+                        domain = _extract_domain(sender)
+                        if domain:
+                            self.logger.info(f"Spam learning: whitelisting domain '{domain}' (email moved from {folder})")
+                            _auto_whitelist_domain(credential.id, domain, self.session_factory)
+
+                    uid_cache[folder] = current
+
+                except Exception as e:
+                    self.logger.error(f"Spam learning error for {folder}: {e}")
+
+        try:
+            imap.disconnect()
+        except Exception:
+            pass
+        self.logger.info(f"Spam learning monitor stopped for {credential.email_address}")
 
     def _folder_watcher(self, credential: EmailCredential, folder: str, credential_stop: threading.Event = None) -> None:
         """
