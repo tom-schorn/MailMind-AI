@@ -39,7 +39,7 @@
               {% for account in accounts %}
               <tr>
                 <td>{{ account.id }}</td>
-                <td>{{ account.email_address }}</td>
+                <td><a href="{{ url_for('account_dashboard', id=account.id) }}">{{ account.email_address }}</a></td>
                 <td>{{ account.host }}</td>
                 <td>{{ account.port }}</td>
                 <td>

@@ -1,10 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Labels - MailMind AI{% endblock %}
+{% block title %}Labels - {{ account.email_address }} - MailMind AI{% endblock %}
 
 {% block page_title %}Labels{% endblock %}
 
 {% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('list_accounts') }}">Email Accounts</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('account_dashboard', id=account.id) }}">{{ account.email_address }}</a></li>
 <li class="breadcrumb-item active">Labels</li>
 {% endblock %}
 
@@ -17,34 +19,23 @@
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-center">
             <h5 class="card-title">Label Management</h5>
-            <div>
-              <a href="{{ url_for('add_label_page') }}" class="btn btn-primary btn-sm">
+            <div class="d-flex gap-2">
+              <form method="POST" action="{{ url_for('account_sync_labels', id=account.id) }}" class="d-inline">
+                <button type="submit" class="btn btn-outline-secondary btn-sm">
+                  <i class="bi bi-arrow-repeat"></i> Sync from IMAP
+                </button>
+              </form>
+              <a href="{{ url_for('account_add_label', id=account.id) }}" class="btn btn-primary btn-sm">
                 <i class="bi bi-plus-circle"></i> Add Label
               </a>
             </div>
           </div>
-
-          {% if accounts|length > 0 %}
-          <div class="mb-3">
-            <label class="form-label">Sync from IMAP</label>
-            <div class="d-flex gap-2 flex-wrap">
-              {% for account in accounts %}
-              <form method="POST" action="{{ url_for('sync_labels_from_imap', credential_id=account.id) }}" class="d-inline">
-                <button type="submit" class="btn btn-outline-secondary btn-sm">
-                  <i class="bi bi-arrow-repeat"></i> {{ account.email_address }}
-                </button>
-              </form>
-              {% endfor %}
-            </div>
-          </div>
-          {% endif %}
 
           <table class="table table-hover">
             <thead>
               <tr>
                 <th>Color</th>
                 <th>Name</th>
-                <th>Account</th>
                 <th>Source</th>
                 <th>Actions</th>
               </tr>
@@ -52,7 +43,7 @@
             <tbody>
               {% if labels|length == 0 %}
               <tr>
-                <td colspan="5" class="text-center text-muted">No labels defined yet.</td>
+                <td colspan="4" class="text-center text-muted">No labels defined yet.</td>
               </tr>
               {% endif %}
               {% for label in labels %}
@@ -61,7 +52,6 @@
                   <span class="badge" style="background-color: {{ label.color or '#6c757d' }};">&nbsp;&nbsp;&nbsp;</span>
                 </td>
                 <td>{{ label.name }}</td>
-                <td>{{ label.credential.email_address if label.credential else 'N/A' }}</td>
                 <td>
                   {% if label.is_imap_flag %}
                   <span class="badge bg-info">IMAP</span>
@@ -70,10 +60,10 @@
                   {% endif %}
                 </td>
                 <td>
-                  <a href="{{ url_for('edit_label_page', id=label.id) }}" class="btn btn-sm btn-outline-primary">
+                  <a href="{{ url_for('account_edit_label', id=account.id, label_id=label.id) }}" class="btn btn-sm btn-outline-primary">
                     <i class="bi bi-pencil"></i>
                   </a>
-                  <form method="POST" action="{{ url_for('delete_label', id=label.id) }}" class="d-inline"
+                  <form method="POST" action="{{ url_for('account_delete_label', id=account.id, label_id=label.id) }}" class="d-inline"
                         onsubmit="return confirm('Delete this label?')">
                     <button type="submit" class="btn btn-sm btn-outline-danger">
                       <i class="bi bi-trash"></i>
