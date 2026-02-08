@@ -535,7 +535,7 @@ class ConditionEvaluator:
             return False, f"Field '{condition.field}' not found"
 
         try:
-            matched = self._apply_operator(field_value, condition.operator, condition.value, email.date)
+            matched = self._apply_operator(field_value, condition.operator, condition.value, email.date, field=condition.field.lower())
             reason = f"{condition.field} {condition.operator} '{condition.value}'"
 
             if matched:
@@ -570,10 +570,35 @@ class ConditionEvaluator:
         elif field == 'header':
             header_name = condition.value.split(':')[0] if ':' in condition.value else condition.value
             return email.headers.get(header_name, '')
+        elif field == 'has_attachment':
+            attachments = list(email.raw_message.attachments)
+            return 'yes' if len(attachments) > 0 else 'no'
+        elif field == 'attachment_count':
+            return str(len(list(email.raw_message.attachments)))
+        elif field == 'attachment_format':
+            formats = [att.content_type for att in email.raw_message.attachments if att.content_type]
+            return ','.join(formats)
+        elif field == 'attachment_filename':
+            filenames = [att.filename or '' for att in email.raw_message.attachments]
+            return ','.join(filenames)
+        elif field == 'attachment_size':
+            total = sum(att.size for att in email.raw_message.attachments)
+            return str(total)
         else:
             return None
 
-    def _apply_operator(self, field_value: str, operator: str, compare_value: str, email_date: datetime) -> bool:
+    @staticmethod
+    def _parse_size_value(value: str) -> float:
+        """Parse a size value with optional unit (KB, MB, GB) to bytes."""
+        value = value.strip().upper()
+        units = {'KB': 1024, 'MB': 1024 ** 2, 'GB': 1024 ** 3, 'B': 1}
+        for unit, factor in units.items():
+            if value.endswith(unit):
+                num = value[:-len(unit)].strip()
+                return float(num) * factor
+        return float(value)
+
+    def _apply_operator(self, field_value: str, operator: str, compare_value: str, email_date: datetime, field: str = None) -> bool:
         """Apply operator to compare field value with expected value."""
         operator = operator.lower()
 
@@ -594,12 +619,16 @@ class ConditionEvaluator:
 
         elif operator == 'greater_than':
             try:
+                if field == 'attachment_size':
+                    return float(field_value) > self._parse_size_value(compare_value)
                 return float(field_value) > float(compare_value)
             except ValueError:
                 return False
 
         elif operator == 'less_than':
             try:
+                if field == 'attachment_size':
+                    return float(field_value) < self._parse_size_value(compare_value)
                 return float(field_value) < float(compare_value)
             except ValueError:
                 return False

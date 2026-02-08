@@ -81,6 +81,13 @@
                         <option value="header" {% if cond.field == 'header' %}selected{% endif %}>Header</option>
                         <option value="date" {% if cond.field == 'date' %}selected{% endif %}>Date</option>
                         <option value="label" {% if cond.field == 'label' %}selected{% endif %}>Label</option>
+                        <optgroup label="Attachment">
+                          <option value="has_attachment" {% if cond.field == 'has_attachment' %}selected{% endif %}>Has Attachment</option>
+                          <option value="attachment_count" {% if cond.field == 'attachment_count' %}selected{% endif %}>Attachment Count</option>
+                          <option value="attachment_format" {% if cond.field == 'attachment_format' %}selected{% endif %}>Attachment Format</option>
+                          <option value="attachment_filename" {% if cond.field == 'attachment_filename' %}selected{% endif %}>Attachment Filename</option>
+                          <option value="attachment_size" {% if cond.field == 'attachment_size' %}selected{% endif %}>Attachment Size</option>
+                        </optgroup>
                       </select>
                     </div>
                     <div class="col-md-3">
@@ -359,16 +366,63 @@ const labelOperators = [
   {value: 'not_has_label', text: 'does not have label'}
 ];
 
+const hasAttachmentOperators = [
+  {value: 'equals', text: 'equals'}
+];
+
+const attachmentCountOperators = [
+  {value: 'equals', text: 'equals'},
+  {value: 'greater_than', text: 'greater than'},
+  {value: 'less_than', text: 'less than'}
+];
+
+const attachmentFormatOperators = [
+  {value: 'contains', text: 'contains'}
+];
+
+const attachmentFilenameOperators = [
+  {value: 'contains', text: 'contains'},
+  {value: 'equals', text: 'equals'},
+  {value: 'starts_with', text: 'starts with'},
+  {value: 'ends_with', text: 'ends with'}
+];
+
+const attachmentSizeOperators = [
+  {value: 'greater_than', text: 'greater than'},
+  {value: 'less_than', text: 'less than'}
+];
+
+const mimeTypes = [
+  {value: 'application/pdf', text: 'PDF'},
+  {value: 'image/jpeg', text: 'JPEG'},
+  {value: 'image/png', text: 'PNG'},
+  {value: 'application/zip', text: 'ZIP'},
+  {value: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', text: 'DOCX'},
+  {value: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', text: 'XLSX'},
+  {value: 'text/plain', text: 'TXT'},
+  {value: 'text/csv', text: 'CSV'}
+];
+
+function getOperatorsForField(field) {
+  switch (field) {
+    case 'date': return dateOperators;
+    case 'label': return labelOperators;
+    case 'has_attachment': return hasAttachmentOperators;
+    case 'attachment_count': return attachmentCountOperators;
+    case 'attachment_format': return attachmentFormatOperators;
+    case 'attachment_filename': return attachmentFilenameOperators;
+    case 'attachment_size': return attachmentSizeOperators;
+    default: return standardOperators;
+  }
+}
+
 function onConditionFieldChange(fieldSelect) {
   const row = fieldSelect.closest('.condition-row');
   const operatorSelect = row.querySelector('.condition-operator-select');
   const field = fieldSelect.value;
   const currentOp = operatorSelect.value;
 
-  let operators;
-  if (field === 'date') operators = dateOperators;
-  else if (field === 'label') operators = labelOperators;
-  else operators = standardOperators;
+  const operators = getOperatorsForField(field);
 
   operatorSelect.innerHTML = '';
   operators.forEach(op => {
@@ -387,20 +441,119 @@ function updateConditionValueInput(row) {
   const valueContainer = row.querySelector('.col-md-5');
   const operator = operatorSelect.value;
   const existingInput = valueContainer.querySelector('[name^="condition_value_"]');
-  const inputName = existingInput.name;
-  const currentValue = existingInput.value;
+  const inputName = existingInput ? existingInput.name : valueContainer.querySelector('[data-name]') ? valueContainer.querySelector('[data-name]').getAttribute('data-name') : 'condition_value_0';
+  const currentValue = existingInput ? existingInput.value : '';
   const fieldSelect = row.querySelector('.condition-field-select');
   const field = fieldSelect ? fieldSelect.value : '';
+  const target = existingInput || valueContainer.querySelector('.input-group');
 
-  if (operator === 'date_before') {
-    if (existingInput.type !== 'date') {
+  if (field === 'has_attachment') {
+    const sel = document.createElement('select');
+    sel.name = inputName;
+    sel.className = 'form-select condition-value-input';
+    sel.required = true;
+    sel.innerHTML = '<option value="yes"' + (currentValue === 'yes' ? ' selected' : '') + '>Yes</option><option value="no"' + (currentValue === 'no' ? ' selected' : '') + '>No</option>';
+    target.replaceWith(sel);
+  } else if (field === 'attachment_count') {
+    if (!existingInput || existingInput.type !== 'number') {
+      const numInput = document.createElement('input');
+      numInput.type = 'number';
+      numInput.name = inputName;
+      numInput.className = 'form-control condition-value-input';
+      numInput.placeholder = 'Count (e.g. 3)';
+      numInput.min = '0';
+      numInput.required = true;
+      numInput.value = currentValue;
+      target.replaceWith(numInput);
+    }
+  } else if (field === 'attachment_format') {
+    const sel = document.createElement('select');
+    sel.name = inputName;
+    sel.className = 'form-select condition-value-input';
+    sel.required = true;
+    mimeTypes.forEach(mt => {
+      const opt = document.createElement('option');
+      opt.value = mt.value;
+      opt.textContent = `${mt.text} (${mt.value})`;
+      if (mt.value === currentValue) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    target.replaceWith(sel);
+  } else if (field === 'attachment_filename') {
+    if (!existingInput || existingInput.tagName !== 'INPUT' || existingInput.type !== 'text') {
+      const textInput = document.createElement('input');
+      textInput.type = 'text';
+      textInput.name = inputName;
+      textInput.className = 'form-control condition-value-input';
+      textInput.placeholder = 'Filename pattern (e.g. invoice)';
+      textInput.required = true;
+      textInput.value = currentValue;
+      target.replaceWith(textInput);
+    } else {
+      existingInput.placeholder = 'Filename pattern (e.g. invoice)';
+    }
+  } else if (field === 'attachment_size') {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'input-group condition-value-input';
+    wrapper.setAttribute('data-name', inputName);
+
+    // Parse existing value like "5 MB"
+    let numVal = '';
+    let unitVal = 'MB';
+    if (currentValue) {
+      const parts = currentValue.trim().split(/\s+/);
+      if (parts.length >= 2) { numVal = parts[0]; unitVal = parts[1]; }
+      else { numVal = parts[0]; }
+    }
+
+    const numInput = document.createElement('input');
+    numInput.type = 'number';
+    numInput.className = 'form-control';
+    numInput.placeholder = 'Size';
+    numInput.min = '0';
+    numInput.step = 'any';
+    numInput.value = numVal;
+    numInput.id = inputName + '_num';
+
+    const unitSel = document.createElement('select');
+    unitSel.className = 'form-select';
+    unitSel.style.maxWidth = '80px';
+    unitSel.id = inputName + '_unit';
+    ['KB', 'MB', 'GB'].forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u; opt.textContent = u;
+      if (u === unitVal) opt.selected = true;
+      unitSel.appendChild(opt);
+    });
+
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = inputName;
+    hiddenInput.className = 'condition-value-input';
+    hiddenInput.required = true;
+
+    function updateHidden() {
+      const num = numInput.value || '0';
+      hiddenInput.value = num + ' ' + unitSel.value;
+    }
+    numInput.addEventListener('input', updateHidden);
+    unitSel.addEventListener('change', updateHidden);
+
+    wrapper.appendChild(numInput);
+    wrapper.appendChild(unitSel);
+    wrapper.appendChild(hiddenInput);
+    updateHidden();
+
+    target.replaceWith(wrapper);
+  } else if (operator === 'date_before') {
+    if (!existingInput || existingInput.type !== 'date') {
       const dateInput = document.createElement('input');
       dateInput.type = 'date';
       dateInput.name = inputName;
       dateInput.className = 'form-control condition-value-input';
       dateInput.required = true;
       dateInput.value = currentValue;
-      existingInput.replaceWith(dateInput);
+      target.replaceWith(dateInput);
     }
   } else if (field === 'label') {
     const sel = buildLabelSelect(inputName, currentValue, function() {
@@ -409,9 +562,9 @@ function updateConditionValueInput(row) {
         new bootstrap.Modal(document.getElementById('createLabelModal')).show();
       }
     });
-    if (sel) existingInput.replaceWith(sel);
+    if (sel) target.replaceWith(sel);
   } else {
-    if (existingInput.type === 'date') {
+    if (!existingInput || existingInput.type === 'date' || existingInput.tagName !== 'INPUT') {
       const textInput = document.createElement('input');
       textInput.type = 'text';
       textInput.name = inputName;
@@ -419,7 +572,7 @@ function updateConditionValueInput(row) {
       textInput.placeholder = operator === 'date_older_than' ? 'Days (e.g. 30)' : 'Value';
       textInput.required = true;
       textInput.value = currentValue;
-      existingInput.replaceWith(textInput);
+      target.replaceWith(textInput);
     } else {
       existingInput.placeholder = operator === 'date_older_than' ? 'Days (e.g. 30)' : 'Value';
     }
@@ -439,6 +592,13 @@ function addCondition() {
             <option value="header">Header</option>
             <option value="date">Date</option>
             <option value="label">Label</option>
+            <optgroup label="Attachment">
+              <option value="has_attachment">Has Attachment</option>
+              <option value="attachment_count">Attachment Count</option>
+              <option value="attachment_format">Attachment Format</option>
+              <option value="attachment_filename">Attachment Filename</option>
+              <option value="attachment_size">Attachment Size</option>
+            </optgroup>
           </select>
         </div>
         <div class="col-md-3">

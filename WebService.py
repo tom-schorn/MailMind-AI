@@ -1114,6 +1114,8 @@ def test_rule_preview():
                                 actions_would_apply.append("delete")
                             elif action_type == 'modify_subject':
                                 actions_would_apply.append(f"modify_subject: {action_value}")
+                            elif action_type == 'save_attachments':
+                                actions_would_apply.append("save_attachments")
 
                         results.append({
                             'email_uid': uid,
