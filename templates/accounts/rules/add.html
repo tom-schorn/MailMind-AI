@@ -718,7 +718,8 @@ function testRule() {
       logic: logic,
       conditions: conditions,
       actions: actions,
-      max_emails: 10
+      max_emails: 10,
+      monitored_folder: document.getElementById('monitored_folder').value
     })
   })
   .then(response => response.json())

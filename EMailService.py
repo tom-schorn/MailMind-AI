@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from config_manager import load_config
 from LoggingService import LoggingService
 from utils import get_database_url
-from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, ProcessedEmail, EmailRuleApplication
+from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, ProcessedEmail, EmailRuleApplication, WatcherReloadSignal
 
 
 @dataclass
@@ -861,7 +861,7 @@ class EmailProcessor:
                     action_logs = self.rule_engine.execute_actions(email, actions, dry_run=False)
                     actions_taken.extend(action_logs)
 
-                    self._mark_as_processed(email.uid, credential_id, rule.id, json.dumps(action_logs))
+                    self._mark_as_processed(email.uid, credential_id, rule.id, json.dumps(action_logs), email.subject)
 
             except Exception as e:
                 error_msg = f"Error processing rule {rule.name}: {e}"
@@ -907,7 +907,7 @@ class EmailProcessor:
             rule_id=rule_id
         ).all()
 
-    def _mark_as_processed(self, email_uid: str, credential_id: int, rule_id: int, actions_taken: str) -> None:
+    def _mark_as_processed(self, email_uid: str, credential_id: int, rule_id: int, actions_taken: str, email_subject: str = None) -> None:
         """Mark email as processed by a specific rule."""
         try:
             application = EmailRuleApplication(
@@ -915,7 +915,8 @@ class EmailProcessor:
                 email_credential_id=credential_id,
                 rule_id=rule_id,
                 applied_at=datetime.now(),
-                actions_taken=actions_taken
+                actions_taken=actions_taken,
+                email_subject=email_subject[:255] if email_subject else None
             )
 
             self.session.add(application)
@@ -1199,60 +1200,95 @@ class EMailService:
         """
         Email watcher loop for a single credential.
         Starts separate watchers for each monitored folder.
+        Polls for reload signals to restart watchers when rules change.
 
         Args:
             credential: EmailCredential to watch
         """
         self.logger.info(f"Starting email watcher for {credential.email_address}")
 
-        session = self.session_factory()
-        try:
-            
-            rules = session.query(EmailRule).filter_by(
-                email_credential_id=credential.id,
-                enabled=True
-            ).all()
+        while not self.stop_event.is_set():
+            credential_stop = threading.Event()
 
-            monitored_folders = set()
-            for rule in rules:
-                folder = rule.monitored_folder if hasattr(rule, 'monitored_folder') and rule.monitored_folder else 'INBOX'
-                monitored_folders.add(folder)
+            session = self.session_factory()
+            try:
+                rules = session.query(EmailRule).filter_by(
+                    email_credential_id=credential.id,
+                    enabled=True
+                ).all()
 
-            if not monitored_folders:
-                monitored_folders.add('INBOX')
+                monitored_folders = set()
+                for rule in rules:
+                    folder = rule.monitored_folder if hasattr(rule, 'monitored_folder') and rule.monitored_folder else 'INBOX'
+                    monitored_folders.add(folder)
 
-            self.logger.info(f"Monitoring {len(monitored_folders)} folders: {monitored_folders}")
-        finally:
-            session.close()
+                if not monitored_folders:
+                    monitored_folders.add('INBOX')
 
-        folder_threads = []
-        for folder in monitored_folders:
-            folder_thread = threading.Thread(
-                target=self._folder_watcher,
-                args=(credential, folder),
-                daemon=True,
-                name=f"Watcher-{credential.email_address}-{folder}"
-            )
-            folder_thread.start()
-            folder_threads.append(folder_thread)
+                self.logger.info(f"Monitoring {len(monitored_folders)} folders for {credential.email_address}: {monitored_folders}")
+            finally:
+                session.close()
 
-        for thread in folder_threads:
-            thread.join()
+            folder_threads = []
+            for folder in monitored_folders:
+                folder_thread = threading.Thread(
+                    target=self._folder_watcher,
+                    args=(credential, folder, credential_stop),
+                    daemon=True,
+                    name=f"Watcher-{credential.email_address}-{folder}"
+                )
+                folder_thread.start()
+                folder_threads.append(folder_thread)
 
-    def _folder_watcher(self, credential: EmailCredential, folder: str) -> None:
+            # Poll for reload signals every 10 seconds
+            while not self.stop_event.is_set():
+                if self.stop_event.wait(timeout=10):
+                    break
+
+                session = self.session_factory()
+                try:
+                    signal = session.query(WatcherReloadSignal).filter_by(
+                        credential_id=credential.id
+                    ).first()
+
+                    if signal:
+                        self.logger.info(f"Reload signal received for {credential.email_address}, restarting watchers...")
+                        session.delete(signal)
+                        session.commit()
+
+                        # Stop current folder watchers
+                        credential_stop.set()
+                        for thread in folder_threads:
+                            thread.join(timeout=5)
+
+                        break  # Restart outer loop with new folder set
+                finally:
+                    session.close()
+            else:
+                # stop_event was set, stop everything
+                credential_stop.set()
+                for thread in folder_threads:
+                    thread.join(timeout=5)
+                break
+
+    def _folder_watcher(self, credential: EmailCredential, folder: str, credential_stop: threading.Event = None) -> None:
         """
         Watch a single folder for a credential.
 
         Args:
             credential: EmailCredential to watch
             folder: Folder name to monitor
+            credential_stop: Event to signal this watcher to stop for reload
         """
         self.logger.info(f"Starting folder watcher for {credential.email_address}/{folder}")
         base_delay = self.config.get('service', {}).get('imap_reconnect_delay', 30)
         max_delay = self.config.get('service', {}).get('imap_max_reconnect_delay', 300)
         current_delay = base_delay
 
-        while not self.stop_event.is_set():
+        def should_stop():
+            return self.stop_event.is_set() or (credential_stop and credential_stop.is_set())
+
+        while not should_stop():
             try:
                 imap_client = IMAPClient(credential, self.config, self.logger)
                 imap_client.connect()
@@ -1270,7 +1306,7 @@ class EMailService:
                     self._process_new_email(uid, credential.id, folder)
 
                 def stop_check():
-                    return self.stop_event.is_set()
+                    return should_stop()
 
                 imap_client.watch(callback, stop_check, folder)
                 current_delay = base_delay  # Reset on successful connection
@@ -1473,7 +1509,8 @@ class DryRunHandler:
 
         rule_engine = RuleEngine(imap_client, self.logger)
 
-        uids = imap_client.get_all_uids(limit=0)
+        folder = rule.monitored_folder or 'INBOX'
+        uids = imap_client.get_all_uids(folder=folder, limit=0)
         self.logger.info(f"Processing emails for dry-run (max 10 matches)")
 
         matched_count = 0
