@@ -3,5 +3,15 @@
   "log_level": "INFO",
   "log_to_file": true,
   "log_file_path": "logs/mailmind.log",
-  "auto_apply_rules": false
+  "auto_apply_rules": false,
+  "service": {
+    "heartbeat_interval": 10,
+    "dry_run_poll_interval": 5,
+    "imap_reconnect_delay": 30,
+    "imap_max_reconnect_delay": 300,
+    "imap_idle_cycle_timeout": 180,
+    "imap_max_connection_age": 1500,
+    "use_imap_idle": true,
+    "imap_poll_interval": 60
+  }
 }
