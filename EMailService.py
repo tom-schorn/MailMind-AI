@@ -19,7 +19,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from config_manager import load_config
 from LoggingService import LoggingService
 from utils import get_database_url
-from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, ProcessedEmail, EmailRuleApplication, WatcherReloadSignal
+from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, ProcessedEmail, EmailRuleApplication, WatcherReloadSignal, SpamConfig, SpamAnalysis, WhitelistEntry, BlacklistEntry
 
 
 @dataclass
@@ -34,6 +34,8 @@ class EmailMessage:
     body_text: str
     body_html: str
     raw_message: MailMessage
+    spam_score: Optional[float] = None
+    spam_category: Optional[str] = None
 
 
 class IMAPClient:
@@ -586,6 +588,10 @@ class ConditionEvaluator:
         elif field == 'attachment_size':
             total = sum(att.size for att in email.raw_message.attachments)
             return str(total)
+        elif field == 'spam_score':
+            return str(email.spam_score) if email.spam_score is not None else '0'
+        elif field == 'spam_category':
+            return email.spam_category or 'unknown'
         else:
             return None
 
@@ -1424,6 +1430,46 @@ class EMailService:
             account_email = credential.email_address if credential else ''
 
             email = imap_client.fetch_email(uid)
+
+            # Spam analysis enrichment (if enabled for this account)
+            api_key = os.environ.get('ANTHROPIC_API_KEY')
+            spam_config = session.query(SpamConfig).filter_by(credential_id=credential_id).first()
+            if spam_config and spam_config.enabled and api_key:
+                cached = session.query(SpamAnalysis).filter_by(
+                    credential_id=credential_id, email_uid=uid
+                ).first()
+
+                if cached:
+                    email.spam_score = cached.spam_score
+                    email.spam_category = cached.spam_category
+                    self.logger.debug(f"Using cached spam analysis for {uid}: score={cached.spam_score}, category={cached.spam_category}")
+                else:
+                    try:
+                        from SpamService import SpamAnalyzer
+                        analyzer = SpamAnalyzer(api_key, spam_config.model, spam_config.sensitivity, self.logger)
+                        whitelist = [w.domain for w in session.query(WhitelistEntry).filter_by(credential_id=credential_id).all()]
+                        blacklist = [b.domain for b in session.query(BlacklistEntry).filter_by(credential_id=credential_id).all()]
+
+                        spam_result = analyzer.analyze_email(email, whitelist, blacklist)
+                        email.spam_score = spam_result.score
+                        email.spam_category = spam_result.category.value
+
+                        import json as _json
+                        analysis = SpamAnalysis(
+                            credential_id=credential_id,
+                            email_uid=uid,
+                            spam_score=spam_result.score,
+                            spam_category=spam_result.category.value,
+                            analysis_json=_json.dumps(spam_result.step_results),
+                            email_subject=email.subject[:255] if email.subject else None,
+                            email_from=email.sender[:255] if email.sender else None,
+                        )
+                        session.add(analysis)
+                        session.commit()
+
+                        self.logger.info(f"Spam analysis for {uid}: score={spam_result.score}, category={spam_result.category.value}")
+                    except Exception as e:
+                        self.logger.error(f"Spam analysis failed for {uid}: {e}")
 
             rule_engine = RuleEngine(imap_client, self.logger)
             email_processor = EmailProcessor(session, rule_engine, self.logger)

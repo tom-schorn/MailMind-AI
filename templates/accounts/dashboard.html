@@ -31,7 +31,7 @@
 
   <!-- Stat Cards -->
   <div class="row">
-    <div class="col-md-4">
+    <div class="col-md-3">
       <div class="card info-card">
         <div class="card-body">
           <h5 class="card-title">Rules</h5>
@@ -48,7 +48,7 @@
       </div>
     </div>
 
-    <div class="col-md-4">
+    <div class="col-md-3">
       <div class="card info-card">
         <div class="card-body">
           <h5 class="card-title">Labels</h5>
@@ -65,7 +65,28 @@
       </div>
     </div>
 
-    <div class="col-md-4">
+    <div class="col-md-3">
+      <div class="card info-card">
+        <div class="card-body">
+          <h5 class="card-title">Spam Detection</h5>
+          <div class="d-flex align-items-center">
+            <div class="card-icon rounded-circle d-flex align-items-center justify-content-center" style="background: #e8f5e9; width: 48px; height: 48px;">
+              <i class="bi bi-shield-check" style="color: #4caf50; font-size: 24px;"></i>
+            </div>
+            <div class="ps-3">
+              {% if spam_config and spam_config.enabled %}
+                <span class="badge bg-success">Enabled</span>
+              {% else %}
+                <span class="badge bg-secondary">Disabled</span>
+              {% endif %}
+            </div>
+          </div>
+          <a href="{{ url_for('account_spam_settings', id=account.id) }}" class="small mt-2 d-block">Configure <i class="bi bi-arrow-right"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3">
       <div class="card info-card">
         <div class="card-body">
           <h5 class="card-title">Service Status</h5>

@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, DatabaseService
 from DatabaseService import DryRunRequest, DryRunResult, ServiceStatus, Label, ProcessedEmail, EmailRuleApplication, WatcherReloadSignal
+from DatabaseService import SpamConfig, SpamAnalysis, WhitelistEntry, BlacklistEntry
 import os
 import re
 import json
@@ -276,6 +277,8 @@ def account_dashboard(id):
         rules_count = session.query(EmailRule).filter_by(email_credential_id=id).count()
         labels_count = session.query(Label).filter_by(credential_id=id).count()
 
+        spam_config = session.query(SpamConfig).filter_by(credential_id=id).first()
+
         service_status = session.query(ServiceStatus).filter_by(
             service_name='EmailService'
         ).first()
@@ -299,6 +302,7 @@ def account_dashboard(id):
                              account=account,
                              rules_count=rules_count,
                              labels_count=labels_count,
+                             spam_config=spam_config,
                              service_status=service_status,
                              recent_activity=recent_activity)
     finally:
@@ -739,6 +743,231 @@ def account_logs(id):
             return redirect(url_for('list_accounts'))
 
         return render_template('accounts/logs.html', account=account)
+    finally:
+        session.close()
+
+
+@app.route('/accounts/<int:id>/spam', methods=['GET', 'POST'])
+def account_spam_settings(id):
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        if request.method == 'POST':
+            spam_config = session.query(SpamConfig).filter_by(credential_id=id).first()
+            if not spam_config:
+                spam_config = SpamConfig(credential_id=id)
+                session.add(spam_config)
+
+            spam_config.enabled = 'enabled' in request.form
+            spam_config.sensitivity = int(request.form.get('sensitivity', 5))
+            spam_config.model = request.form.get('model', 'haiku')
+            spam_config.spam_folder = request.form.get('spam_folder', 'Spam')
+            spam_config.auto_categorize = 'auto_categorize' in request.form
+
+            session.commit()
+            flash('Spam detection settings saved!', 'success')
+            return redirect(url_for('account_spam_settings', id=id))
+
+        spam_config = session.query(SpamConfig).filter_by(credential_id=id).first()
+        whitelist = session.query(WhitelistEntry).filter_by(credential_id=id).order_by(WhitelistEntry.added_at.desc()).all()
+        blacklist = session.query(BlacklistEntry).filter_by(credential_id=id).order_by(BlacklistEntry.added_at.desc()).all()
+
+        api_key_configured = bool(os.environ.get('ANTHROPIC_API_KEY'))
+
+        return render_template('accounts/spam/settings.html',
+                             account=account,
+                             spam_config=spam_config,
+                             whitelist=whitelist,
+                             blacklist=blacklist,
+                             api_key_configured=api_key_configured)
+    except Exception as e:
+        session.rollback()
+        flash(f'Error saving spam settings: {str(e)}', 'danger')
+        return redirect(url_for('account_dashboard', id=id))
+    finally:
+        session.close()
+
+
+@app.route('/accounts/<int:id>/spam/log')
+def account_spam_log(id):
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        analyses = session.query(SpamAnalysis).filter_by(
+            credential_id=id
+        ).order_by(SpamAnalysis.analyzed_at.desc()).limit(100).all()
+
+        analysis_data = []
+        for a in analyses:
+            step_results = []
+            if a.analysis_json:
+                try:
+                    step_results = json.loads(a.analysis_json)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            analysis_data.append({
+                'id': a.id,
+                'email_uid': a.email_uid,
+                'email_subject': a.email_subject or f'UID {a.email_uid}',
+                'email_from': a.email_from or 'Unknown',
+                'spam_score': a.spam_score,
+                'spam_category': a.spam_category,
+                'step_results': step_results,
+                'analyzed_at': a.analyzed_at,
+            })
+
+        return render_template('accounts/spam/log.html',
+                             account=account,
+                             analyses=analysis_data)
+    finally:
+        session.close()
+
+
+@app.route('/api/spam/whitelist/<int:credential_id>')
+def get_whitelist(credential_id):
+    session = db_service.get_session()
+    try:
+        entries = session.query(WhitelistEntry).filter_by(credential_id=credential_id).all()
+        return jsonify({
+            'status': 'success',
+            'entries': [{'id': e.id, 'domain': e.domain, 'added_at': str(e.added_at), 'reason': e.reason} for e in entries]
+        })
+    finally:
+        session.close()
+
+
+@app.route('/api/spam/whitelist/<int:credential_id>', methods=['POST'])
+def add_whitelist(credential_id):
+    session = db_service.get_session()
+    try:
+        data = request.get_json()
+        domain = data.get('domain', '').strip().lower()
+        reason = data.get('reason', '').strip()
+
+        if not domain:
+            return jsonify({'error': 'Domain is required'}), 400
+
+        existing = session.query(WhitelistEntry).filter_by(credential_id=credential_id, domain=domain).first()
+        if existing:
+            return jsonify({'error': 'Domain already whitelisted'}), 409
+
+        entry = WhitelistEntry(credential_id=credential_id, domain=domain, reason=reason or None)
+        session.add(entry)
+        session.commit()
+        return jsonify({'status': 'success', 'entry': {'id': entry.id, 'domain': entry.domain}})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/api/spam/whitelist/<int:entry_id>', methods=['DELETE'])
+def delete_whitelist(entry_id):
+    session = db_service.get_session()
+    try:
+        entry = session.query(WhitelistEntry).filter_by(id=entry_id).first()
+        if not entry:
+            return jsonify({'error': 'Entry not found'}), 404
+        session.delete(entry)
+        session.commit()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/api/spam/blacklist/<int:credential_id>')
+def get_blacklist(credential_id):
+    session = db_service.get_session()
+    try:
+        entries = session.query(BlacklistEntry).filter_by(credential_id=credential_id).all()
+        return jsonify({
+            'status': 'success',
+            'entries': [{'id': e.id, 'domain': e.domain, 'added_at': str(e.added_at), 'reason': e.reason} for e in entries]
+        })
+    finally:
+        session.close()
+
+
+@app.route('/api/spam/blacklist/<int:credential_id>', methods=['POST'])
+def add_blacklist(credential_id):
+    session = db_service.get_session()
+    try:
+        data = request.get_json()
+        domain = data.get('domain', '').strip().lower()
+        reason = data.get('reason', '').strip()
+
+        if not domain:
+            return jsonify({'error': 'Domain is required'}), 400
+
+        existing = session.query(BlacklistEntry).filter_by(credential_id=credential_id, domain=domain).first()
+        if existing:
+            return jsonify({'error': 'Domain already blacklisted'}), 409
+
+        entry = BlacklistEntry(credential_id=credential_id, domain=domain, reason=reason or None)
+        session.add(entry)
+        session.commit()
+        return jsonify({'status': 'success', 'entry': {'id': entry.id, 'domain': entry.domain}})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/api/spam/blacklist/<int:entry_id>', methods=['DELETE'])
+def delete_blacklist(entry_id):
+    session = db_service.get_session()
+    try:
+        entry = session.query(BlacklistEntry).filter_by(id=entry_id).first()
+        if not entry:
+            return jsonify({'error': 'Entry not found'}), 404
+        session.delete(entry)
+        session.commit()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/api/spam/whitelist/import-defaults/<int:credential_id>', methods=['POST'])
+def import_default_whitelist(credential_id):
+    session = db_service.get_session()
+    try:
+        defaults = [
+            'google.com', 'gmail.com', 'apple.com', 'icloud.com',
+            'amazon.com', 'amazon.de', 'paypal.com', 'microsoft.com',
+            'outlook.com', 'hotmail.com', 'github.com', 'linkedin.com',
+            'twitter.com', 'x.com', 'facebook.com', 'instagram.com',
+            'youtube.com', 'netflix.com', 'spotify.com', 'dropbox.com',
+        ]
+
+        added = 0
+        for domain in defaults:
+            existing = session.query(WhitelistEntry).filter_by(credential_id=credential_id, domain=domain).first()
+            if not existing:
+                session.add(WhitelistEntry(credential_id=credential_id, domain=domain, reason='Default import'))
+                added += 1
+
+        session.commit()
+        return jsonify({'status': 'success', 'added': added})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
     finally:
         session.close()
 

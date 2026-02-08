@@ -85,6 +85,10 @@
                           <option value="attachment_filename">Attachment Filename</option>
                           <option value="attachment_size">Attachment Size</option>
                         </optgroup>
+                        <optgroup label="Spam Detection">
+                          <option value="spam_score">Spam Score</option>
+                          <option value="spam_category">Spam Category</option>
+                        </optgroup>
                       </select>
                     </div>
                     <div class="col-md-3">
@@ -409,6 +413,30 @@ const attachmentSizeOperators = [
   {value: 'less_than', text: 'less than'}
 ];
 
+const spamScoreOperators = [
+  {value: 'greater_than', text: 'greater than'},
+  {value: 'less_than', text: 'less than'},
+  {value: 'equals', text: 'equals'}
+];
+
+const spamCategoryOperators = [
+  {value: 'equals', text: 'equals'},
+  {value: 'not_equals', text: 'not equals'},
+  {value: 'contains', text: 'contains'}
+];
+
+const spamCategories = [
+  {value: 'legitimate', text: 'Legitimate'},
+  {value: 'newsletter', text: 'Newsletter'},
+  {value: 'commercial', text: 'Commercial'},
+  {value: 'spam', text: 'Spam'},
+  {value: 'scam', text: 'Scam'},
+  {value: 'phishing', text: 'Phishing'},
+  {value: 'malware', text: 'Malware'},
+  {value: 'adult', text: 'Adult'},
+  {value: 'unknown', text: 'Unknown'}
+];
+
 const mimeTypes = [
   {value: 'application/pdf', text: 'PDF'},
   {value: 'image/jpeg', text: 'JPEG'},
@@ -429,6 +457,8 @@ function getOperatorsForField(field) {
     case 'attachment_format': return attachmentFormatOperators;
     case 'attachment_filename': return attachmentFilenameOperators;
     case 'attachment_size': return attachmentSizeOperators;
+    case 'spam_score': return spamScoreOperators;
+    case 'spam_category': return spamCategoryOperators;
     default: return standardOperators;
   }
 }
@@ -542,6 +572,31 @@ function updateConditionValueInput(row) {
     updateHidden();
 
     existingInput.replaceWith(wrapper);
+  } else if (field === 'spam_score') {
+    if (existingInput.type !== 'number' || existingInput.step !== '0.05') {
+      const numInput = document.createElement('input');
+      numInput.type = 'number';
+      numInput.name = inputName;
+      numInput.className = 'form-control condition-value-input';
+      numInput.placeholder = 'Score (0.0 - 1.0)';
+      numInput.min = '0';
+      numInput.max = '1';
+      numInput.step = '0.05';
+      numInput.required = true;
+      existingInput.replaceWith(numInput);
+    }
+  } else if (field === 'spam_category') {
+    const sel = document.createElement('select');
+    sel.name = inputName;
+    sel.className = 'form-select condition-value-input';
+    sel.required = true;
+    spamCategories.forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat.value;
+      opt.textContent = cat.text;
+      sel.appendChild(opt);
+    });
+    existingInput.replaceWith(sel);
   } else if (operator === 'date_before') {
     if (existingInput.type !== 'date') {
       const dateInput = document.createElement('input');
@@ -587,6 +642,17 @@ function addCondition() {
             <option value="header">Header</option>
             <option value="date">Date</option>
             <option value="label">Label</option>
+            <optgroup label="Attachment">
+              <option value="has_attachment">Has Attachment</option>
+              <option value="attachment_count">Attachment Count</option>
+              <option value="attachment_format">Attachment Format</option>
+              <option value="attachment_filename">Attachment Filename</option>
+              <option value="attachment_size">Attachment Size</option>
+            </optgroup>
+            <optgroup label="Spam Detection">
+              <option value="spam_score">Spam Score</option>
+              <option value="spam_category">Spam Category</option>
+            </optgroup>
           </select>
         </div>
         <div class="col-md-3">
