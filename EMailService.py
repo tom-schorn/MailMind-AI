@@ -1,5 +1,7 @@
 import json
 import logging
+import os
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -733,7 +735,7 @@ class RuleEngine:
         self.logger.info(f"Rule '{rule.name}' evaluation: {overall_match}")
         return overall_match, details
 
-    def execute_actions(self, email: EmailMessage, actions: list[RuleAction], dry_run: bool = False) -> list[str]:
+    def execute_actions(self, email: EmailMessage, actions: list[RuleAction], dry_run: bool = False, context: dict = None) -> list[str]:
         """
         Execute all actions for a matched rule.
 
@@ -741,6 +743,7 @@ class RuleEngine:
             email: EmailMessage to act upon
             actions: List of RuleAction objects
             dry_run: If True, only simulate actions
+            context: Optional dict with 'account_email' and 'rule_name' for actions like save_attachments
 
         Returns:
             List of action descriptions
@@ -754,7 +757,7 @@ class RuleEngine:
 
         for action in sorted_actions:
             try:
-                description = self._execute_action(email, action, dry_run)
+                description = self._execute_action(email, action, dry_run, context)
                 action_logs.append(description)
                 self.logger.info(f"{'[DRY-RUN] ' if dry_run else ''}Action: {description}")
 
@@ -769,16 +772,17 @@ class RuleEngine:
         """Sort actions by execution priority."""
         priority_order = {
             'mark_as_read': 1,
-            'add_label': 2,
-            'copy_to_folder': 3,
-            'modify_subject': 4,
-            'move_to_folder': 5,
-            'delete': 6
+            'save_attachments': 2,
+            'add_label': 3,
+            'copy_to_folder': 4,
+            'modify_subject': 5,
+            'move_to_folder': 6,
+            'delete': 7
         }
 
         return sorted(actions, key=lambda a: priority_order.get(a.action_type, 99))
 
-    def _execute_action(self, email: EmailMessage, action: RuleAction, dry_run: bool) -> str:
+    def _execute_action(self, email: EmailMessage, action: RuleAction, dry_run: bool, context: dict = None) -> str:
         """Execute a single action."""
         action_type = action.action_type.lower()
 
@@ -823,6 +827,43 @@ class RuleEngine:
         elif action_type == 'modify_subject':
             return f"modify_subject: {action.action_value} (not implemented)"
 
+        elif action_type == 'save_attachments':
+            attachments = list(email.raw_message.attachments)
+            if not attachments:
+                return "save_attachments: no attachments found"
+
+            if not dry_run:
+                data_dir = os.environ.get('DATA_DIR', 'data')
+                account_email = (context or {}).get('account_email', 'unknown')
+                rule_name = (context or {}).get('rule_name', 'unknown')
+
+                # Sanitize path components
+                safe_account = re.sub(r'[^\w@.\-]', '_', account_email)
+                safe_rule = re.sub(r'[^\w\-]', '_', rule_name)
+
+                save_dir = os.path.join(data_dir, 'attachments', safe_account, safe_rule)
+                os.makedirs(save_dir, exist_ok=True)
+
+                saved_files = []
+                for att in attachments:
+                    filename = att.filename or f'attachment_{email.uid}'
+                    # Prevent path traversal
+                    filename = os.path.basename(filename)
+                    filepath = os.path.join(save_dir, filename)
+
+                    if os.path.exists(filepath):
+                        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                        filename = f"{timestamp}_{filename}"
+                        filepath = os.path.join(save_dir, filename)
+
+                    with open(filepath, 'wb') as f:
+                        f.write(att.payload)
+                    saved_files.append(filename)
+                    self.logger.debug(f"Saved attachment: {filepath}")
+
+                return f"save_attachments: {len(saved_files)} files saved to {save_dir}"
+            return f"save_attachments: {len(attachments)} attachments would be saved"
+
         else:
             self.logger.warning(f"Unknown action type: {action_type}")
             return f"unknown_action: {action_type}"
@@ -853,13 +894,14 @@ class EmailProcessor:
         self.rule_engine = rule_engine
         self.logger = logger
 
-    def process_email(self, email: EmailMessage, credential_id: int) -> ProcessingResult:
+    def process_email(self, email: EmailMessage, credential_id: int, account_email: str = None) -> ProcessingResult:
         """
         Process a single email through all applicable rules.
 
         Args:
             email: EmailMessage to process
             credential_id: Email credential ID
+            account_email: Email address of the account (for save_attachments path)
 
         Returns:
             ProcessingResult with processing details
@@ -887,7 +929,8 @@ class EmailProcessor:
                     rules_matched.append(rule.id)
 
                     actions = self._load_actions(rule.id)
-                    action_logs = self.rule_engine.execute_actions(email, actions, dry_run=False)
+                    context = {'account_email': account_email or '', 'rule_name': rule.name}
+                    action_logs = self.rule_engine.execute_actions(email, actions, dry_run=False, context=context)
                     actions_taken.extend(action_logs)
 
                     self._mark_as_processed(email.uid, credential_id, rule.id, json.dumps(action_logs), email.subject)
@@ -1377,12 +1420,15 @@ class EMailService:
                 self.logger.warning(f"No IMAP client for credential {credential_id}/{folder}")
                 return
 
+            credential = session.query(EmailCredential).filter_by(id=credential_id).first()
+            account_email = credential.email_address if credential else ''
+
             email = imap_client.fetch_email(uid)
 
             rule_engine = RuleEngine(imap_client, self.logger)
             email_processor = EmailProcessor(session, rule_engine, self.logger)
 
-            result = email_processor.process_email(email, credential_id)
+            result = email_processor.process_email(email, credential_id, account_email=account_email)
 
             self.service_manager.increment_emails_processed()
             self.service_manager.increment_rules_executed()

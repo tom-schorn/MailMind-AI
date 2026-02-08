@@ -365,7 +365,7 @@ def account_add_rule(id):
                 action = RuleAction(
                     rule_id=rule.id,
                     action_type=action_type,
-                    action_value=action_value,
+                    action_value=action_value or '',
                     folder=action_value if action_type in ['move_to_folder', 'copy_to_folder'] else None,
                     label=action_value if action_type == 'add_label' else None
                 )
@@ -435,7 +435,7 @@ def account_edit_rule(id, rule_id):
                 action = RuleAction(
                     rule_id=rule.id,
                     action_type=action_type,
-                    action_value=action_value,
+                    action_value=action_value or '',
                     folder=action_value if action_type in ['move_to_folder', 'copy_to_folder'] else None,
                     label=action_value if action_type == 'add_label' else None
                 )

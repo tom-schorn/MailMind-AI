@@ -133,6 +133,7 @@
                         <option value="mark_as_read">Mark as Read</option>
                         <option value="delete">Delete</option>
                         <option value="modify_subject">Modify Subject</option>
+                        <option value="save_attachments">Save Attachments</option>
                       </select>
                     </div>
                     <div class="col-md-8">
@@ -675,7 +676,25 @@ function toggleActionFields(select) {
   const elName = existingEl.name;
   const currentValue = existingEl.value;
 
-  if (actionType === 'mark_as_read' || actionType === 'delete') {
+  if (actionType === 'save_attachments') {
+    if (existingEl.tagName === 'SELECT') {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.name = elName;
+      input.className = 'form-control action-value';
+      existingEl.replaceWith(input);
+    }
+    const el = valueContainer.querySelector('.action-value');
+    el.style.display = 'none';
+    el.removeAttribute('required');
+    el.value = '';
+    const info = document.createElement('small');
+    info.className = 'text-muted action-info';
+    info.textContent = 'Attachments will be saved to DATA_DIR/attachments/<account>/<rule>/';
+    if (!valueContainer.querySelector('.action-info')) valueContainer.appendChild(info);
+  } else if (actionType === 'mark_as_read' || actionType === 'delete') {
+    const oldInfo = valueContainer.querySelector('.action-info');
+    if (oldInfo) oldInfo.remove();
     if (existingEl.tagName === 'SELECT') {
       const input = document.createElement('input');
       input.type = 'text';
@@ -688,6 +707,8 @@ function toggleActionFields(select) {
     el.removeAttribute('required');
     el.value = '';
   } else if (actionType === 'move_to_folder' || actionType === 'copy_to_folder') {
+    const oldInfo2 = valueContainer.querySelector('.action-info');
+    if (oldInfo2) oldInfo2.remove();
     fetchFoldersIfNeeded().then(folders => {
       const sel = document.createElement('select');
       sel.name = elName;
@@ -705,6 +726,8 @@ function toggleActionFields(select) {
       existingEl.replaceWith(sel);
     });
   } else if (actionType === 'add_label') {
+    const oldInfo3 = valueContainer.querySelector('.action-info');
+    if (oldInfo3) oldInfo3.remove();
     const labelSel = buildLabelSelectForAction(elName, currentValue);
     if (labelSel) {
       existingEl.replaceWith(labelSel);

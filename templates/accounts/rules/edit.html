@@ -140,6 +140,7 @@
                         <option value="mark_as_read" {% if action.action_type == 'mark_as_read' %}selected{% endif %}>Mark as Read</option>
                         <option value="delete" {% if action.action_type == 'delete' %}selected{% endif %}>Delete</option>
                         <option value="modify_subject" {% if action.action_type == 'modify_subject' %}selected{% endif %}>Modify Subject</option>
+                        <option value="save_attachments" {% if action.action_type == 'save_attachments' %}selected{% endif %}>Save Attachments</option>
                       </select>
                     </div>
                     <div class="col-md-8">
@@ -653,6 +654,7 @@ function addAction() {
             <option value="mark_as_read">Mark as Read</option>
             <option value="delete">Delete</option>
             <option value="modify_subject">Modify Subject</option>
+            <option value="save_attachments">Save Attachments</option>
           </select>
         </div>
         <div class="col-md-8">
@@ -689,7 +691,28 @@ function toggleActionFields(select) {
   const elName = existingEl.name;
   const currentValue = existingEl.value;
 
-  if (actionType === 'mark_as_read' || actionType === 'delete') {
+  if (actionType === 'save_attachments') {
+    const oldInfo = valueContainer.querySelector('.action-info');
+    if (!oldInfo) {
+      if (existingEl.tagName === 'SELECT') {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.name = elName;
+        input.className = 'form-control action-value';
+        existingEl.replaceWith(input);
+      }
+      const el = valueContainer.querySelector('.action-value');
+      el.style.display = 'none';
+      el.removeAttribute('required');
+      el.value = '';
+      const info = document.createElement('small');
+      info.className = 'text-muted action-info';
+      info.textContent = 'Attachments will be saved to DATA_DIR/attachments/<account>/<rule>/';
+      valueContainer.appendChild(info);
+    }
+  } else if (actionType === 'mark_as_read' || actionType === 'delete') {
+    const oldInfo2 = valueContainer.querySelector('.action-info');
+    if (oldInfo2) oldInfo2.remove();
     if (existingEl.tagName === 'SELECT') {
       const input = document.createElement('input');
       input.type = 'text';
@@ -702,6 +725,8 @@ function toggleActionFields(select) {
     el.removeAttribute('required');
     el.value = '';
   } else if (actionType === 'move_to_folder' || actionType === 'copy_to_folder') {
+    const oldInfo3 = valueContainer.querySelector('.action-info');
+    if (oldInfo3) oldInfo3.remove();
     fetchFoldersIfNeeded().then(folders => {
       const sel = document.createElement('select');
       sel.name = elName;
@@ -719,6 +744,8 @@ function toggleActionFields(select) {
       existingEl.replaceWith(sel);
     });
   } else if (actionType === 'add_label') {
+    const oldInfo4 = valueContainer.querySelector('.action-info');
+    if (oldInfo4) oldInfo4.remove();
     const labelSel = buildLabelSelectForAction(elName, currentValue);
     if (labelSel) {
       existingEl.replaceWith(labelSel);
