@@ -80,10 +80,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.7.0-pre] - 2026-02-08
 
 ### Added
-- restructure UI to account-centric navigation
+- Restructure UI to account-centric navigation
+- Attachment-based conditions: has_attachment, attachment_count, attachment_format, attachment_filename, attachment_size
+- Size parsing with unit support (KB, MB, GB) for attachment_size condition
+- Dynamic condition UI with MIME type selector, size input with unit, and radio buttons
+- Save attachments action: automatically saves email attachments to DATA_DIR/attachments/<account>/<rule>/
+- DB-based watcher reload signal: rule changes (add/edit/delete) trigger live watcher restart without service restart
+- Database migration 1.3.0 -> 1.4.0 (email_subject in EmailRuleApplication, WatcherReloadSignal table)
+- Email subject tracking in rule application history
 
 ### Fixed
-- resolve code review issues in account-scoped routes
+- Dry-run and test-preview now use monitored_folder instead of defaulting to INBOX
+- Rules list grouped by monitored folder with section headers and count badges
+- Dashboard "Recent Activity" shows email subject, rule name, and human-readable actions instead of raw UIDs/IDs/JSON
+- Docker health-check start-period increased from 5s to 30s to prevent false unhealthy state
 
 
 ## [1.6.0-pre] - 2026-02-08
