@@ -133,7 +133,7 @@ def add_account():
             )
 
             if encryption == 'auto':
-                from imap_test_connection import test_imap_connection
+                from EMailService import test_imap_connection
                 success, message, settings = test_imap_connection(account)
 
                 if success and settings:
