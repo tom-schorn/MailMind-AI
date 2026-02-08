@@ -77,6 +77,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0-pre] - 2026-02-08
+
+### Added
+- add save_attachments action for email rules
+- add attachment-based conditions for email rules
+
+### Fixed
+- resolve dry-run folder bug, group rules by folder, improve dashboard activity
+
+
 ## [1.7.0-pre] - 2026-02-08
 
 ### Added
