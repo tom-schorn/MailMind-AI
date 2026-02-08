@@ -4,7 +4,6 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from email.message import Message
 from typing import Callable, Optional, Dict, Tuple
 import socket
 import errno
@@ -93,8 +92,8 @@ class IMAPClient:
             if self.mailbox:
                 try:
                     self.mailbox.logout()
-                except:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Logout during reconnect failed: {e}")
             self.connected = False
             self.connect()
             self.logger.info("Reconnection successful")
@@ -412,8 +411,8 @@ class IMAPClient:
                 # Send NOOP to keep connection alive before sleeping
                 try:
                     self.mailbox.client.noop()
-                except:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"NOOP keepalive failed: {e}")
 
                 time.sleep(interval)
 
@@ -1199,8 +1198,8 @@ class EMailService:
                     try:
                         self.imap_clients[client_key].disconnect()
                         del self.imap_clients[client_key]
-                    except:
-                        pass
+                    except Exception as e:
+                        self.logger.debug(f"Client disconnect cleanup failed: {e}")
 
     def _process_new_email(self, uid: str, credential_id: int, folder: str = 'INBOX') -> None:
         """
