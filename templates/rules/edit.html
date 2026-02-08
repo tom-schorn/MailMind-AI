@@ -675,7 +675,8 @@ function testRule() {
   document.querySelectorAll('.condition-row').forEach((row, index) => {
     const field = row.querySelector(`select[name^="condition_field_"]`).value;
     const operator = row.querySelector(`select[name^="condition_operator_"]`).value;
-    const value = row.querySelector(`input[name^="condition_value_"]`).value;
+    const valueEl = row.querySelector(`[name^="condition_value_"]`);
+    const value = valueEl ? valueEl.value : '';
     conditions.push({ field, operator, value });
   });
 

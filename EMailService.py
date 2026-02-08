@@ -550,7 +550,7 @@ class ConditionEvaluator:
             self.logger.error(f"Error evaluating condition: {e}")
             return False, f"Error: {str(e)}"
 
-    def _extract_field_value(self, email: EmailMessage, condition: RuleCondition) -> str:
+    def _extract_field_value(self, email: EmailMessage, condition: RuleCondition) -> Optional[str]:
         """Extract field value from email based on condition field."""
         field = condition.field.lower()
 

@@ -206,8 +206,9 @@ class DatabaseMigrator:
 
         if db_version == "1.2.0":
             self._migrate_1_2_0_to_1_3_0()
+            db_version = "1.3.0"
 
-        self.logger.info(f"Migration completed: {db_version} -> {self.current_version}")
+        self.logger.info(f"Migration completed to {self.current_version}")
 
     def _migrate_1_0_0_to_1_1_0(self) -> None:
         """Migrate from v1.0.0 to v1.1.0 (add monitored_folder)."""
