@@ -77,6 +77,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0-pre] - 2026-02-08
+
+### Added
+- replace auto-reload with AJAX-based live log table
+- add label management UI, API endpoints, and live log viewer
+- add Label model and database migration to v1.3.0
+- add date/label condition support and IMAP flag scanning
+- add date filter and folder combobox to rule edit page
+- add monitored folder visibility toggle and date filter conditions
+
+### Fixed
+- resolve code review issues in rule templates and models
+
+
 ## [1.5.3-pre] - 2026-02-08
 
 ### Changed
