@@ -126,18 +126,18 @@
           <table class="table table-sm table-hover">
             <thead>
               <tr>
-                <th>Email UID</th>
+                <th>Subject</th>
                 <th>Rule</th>
-                <th>Actions Taken</th>
-                <th>Applied At</th>
+                <th>Actions</th>
+                <th>Date</th>
               </tr>
             </thead>
             <tbody>
               {% for activity in recent_activity %}
               <tr>
-                <td>{{ activity.email_uid }}</td>
-                <td>{{ activity.rule_id }}</td>
-                <td><small>{{ activity.actions_taken[:80] if activity.actions_taken else 'N/A' }}{% if activity.actions_taken and activity.actions_taken|length > 80 %}...{% endif %}</small></td>
+                <td><small>{{ activity.email_subject[:60] }}{% if activity.email_subject|length > 60 %}...{% endif %}</small></td>
+                <td><span class="badge bg-info">{{ activity.rule_name }}</span></td>
+                <td><small>{{ activity.actions_display[:80] }}{% if activity.actions_display|length > 80 %}...{% endif %}</small></td>
                 <td><small>{{ activity.applied_at.strftime('%Y-%m-%d %H:%M') if activity.applied_at else 'N/A' }}</small></td>
               </tr>
               {% else %}

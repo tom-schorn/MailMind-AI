@@ -78,6 +78,13 @@
                         <option value="header">Header</option>
                         <option value="date">Date</option>
                         <option value="label">Label</option>
+                        <optgroup label="Attachment">
+                          <option value="has_attachment">Has Attachment</option>
+                          <option value="attachment_count">Attachment Count</option>
+                          <option value="attachment_format">Attachment Format</option>
+                          <option value="attachment_filename">Attachment Filename</option>
+                          <option value="attachment_size">Attachment Size</option>
+                        </optgroup>
                       </select>
                     </div>
                     <div class="col-md-3">
@@ -126,6 +133,7 @@
                         <option value="mark_as_read">Mark as Read</option>
                         <option value="delete">Delete</option>
                         <option value="modify_subject">Modify Subject</option>
+                        <option value="save_attachments">Save Attachments</option>
                       </select>
                     </div>
                     <div class="col-md-8">
@@ -375,19 +383,62 @@ const labelOperators = [
   {value: 'not_has_label', text: 'does not have label'}
 ];
 
+const hasAttachmentOperators = [
+  {value: 'equals', text: 'equals'}
+];
+
+const attachmentCountOperators = [
+  {value: 'equals', text: 'equals'},
+  {value: 'greater_than', text: 'greater than'},
+  {value: 'less_than', text: 'less than'}
+];
+
+const attachmentFormatOperators = [
+  {value: 'contains', text: 'contains'}
+];
+
+const attachmentFilenameOperators = [
+  {value: 'contains', text: 'contains'},
+  {value: 'equals', text: 'equals'},
+  {value: 'starts_with', text: 'starts with'},
+  {value: 'ends_with', text: 'ends with'}
+];
+
+const attachmentSizeOperators = [
+  {value: 'greater_than', text: 'greater than'},
+  {value: 'less_than', text: 'less than'}
+];
+
+const mimeTypes = [
+  {value: 'application/pdf', text: 'PDF'},
+  {value: 'image/jpeg', text: 'JPEG'},
+  {value: 'image/png', text: 'PNG'},
+  {value: 'application/zip', text: 'ZIP'},
+  {value: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', text: 'DOCX'},
+  {value: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', text: 'XLSX'},
+  {value: 'text/plain', text: 'TXT'},
+  {value: 'text/csv', text: 'CSV'}
+];
+
+function getOperatorsForField(field) {
+  switch (field) {
+    case 'date': return dateOperators;
+    case 'label': return labelOperators;
+    case 'has_attachment': return hasAttachmentOperators;
+    case 'attachment_count': return attachmentCountOperators;
+    case 'attachment_format': return attachmentFormatOperators;
+    case 'attachment_filename': return attachmentFilenameOperators;
+    case 'attachment_size': return attachmentSizeOperators;
+    default: return standardOperators;
+  }
+}
+
 function onConditionFieldChange(fieldSelect) {
   const row = fieldSelect.closest('.condition-row');
   const operatorSelect = row.querySelector('.condition-operator-select');
   const field = fieldSelect.value;
 
-  let operators;
-  if (field === 'date') {
-    operators = dateOperators;
-  } else if (field === 'label') {
-    operators = labelOperators;
-  } else {
-    operators = standardOperators;
-  }
+  const operators = getOperatorsForField(field);
 
   operatorSelect.innerHTML = '';
   operators.forEach(op => {
@@ -409,7 +460,89 @@ function updateConditionValueInput(row) {
   const fieldSelect = row.querySelector('.condition-field-select');
   const field = fieldSelect ? fieldSelect.value : '';
 
-  if (operator === 'date_before') {
+  if (field === 'has_attachment') {
+    // Radio-style select: Yes/No
+    const sel = document.createElement('select');
+    sel.name = inputName;
+    sel.className = 'form-select condition-value-input';
+    sel.required = true;
+    sel.innerHTML = '<option value="yes">Yes</option><option value="no">No</option>';
+    existingInput.replaceWith(sel);
+  } else if (field === 'attachment_count') {
+    if (existingInput.type !== 'number') {
+      const numInput = document.createElement('input');
+      numInput.type = 'number';
+      numInput.name = inputName;
+      numInput.className = 'form-control condition-value-input';
+      numInput.placeholder = 'Count (e.g. 3)';
+      numInput.min = '0';
+      numInput.required = true;
+      existingInput.replaceWith(numInput);
+    }
+  } else if (field === 'attachment_format') {
+    const sel = document.createElement('select');
+    sel.name = inputName;
+    sel.className = 'form-select condition-value-input';
+    sel.required = true;
+    mimeTypes.forEach(mt => {
+      const opt = document.createElement('option');
+      opt.value = mt.value;
+      opt.textContent = `${mt.text} (${mt.value})`;
+      sel.appendChild(opt);
+    });
+    existingInput.replaceWith(sel);
+  } else if (field === 'attachment_filename') {
+    if (existingInput.tagName !== 'INPUT' || existingInput.type !== 'text') {
+      const textInput = document.createElement('input');
+      textInput.type = 'text';
+      textInput.name = inputName;
+      textInput.className = 'form-control condition-value-input';
+      textInput.placeholder = 'Filename pattern (e.g. invoice)';
+      textInput.required = true;
+      existingInput.replaceWith(textInput);
+    } else {
+      existingInput.placeholder = 'Filename pattern (e.g. invoice)';
+    }
+  } else if (field === 'attachment_size') {
+    // Number input + unit select in a wrapper
+    const wrapper = document.createElement('div');
+    wrapper.className = 'input-group condition-value-input';
+    wrapper.setAttribute('data-name', inputName);
+
+    const numInput = document.createElement('input');
+    numInput.type = 'number';
+    numInput.className = 'form-control';
+    numInput.placeholder = 'Size';
+    numInput.min = '0';
+    numInput.step = 'any';
+    numInput.id = inputName + '_num';
+
+    const unitSel = document.createElement('select');
+    unitSel.className = 'form-select';
+    unitSel.style.maxWidth = '80px';
+    unitSel.id = inputName + '_unit';
+    unitSel.innerHTML = '<option value="KB">KB</option><option value="MB" selected>MB</option><option value="GB">GB</option>';
+
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = inputName;
+    hiddenInput.className = 'condition-value-input';
+    hiddenInput.required = true;
+
+    function updateHidden() {
+      const num = numInput.value || '0';
+      hiddenInput.value = num + ' ' + unitSel.value;
+    }
+    numInput.addEventListener('input', updateHidden);
+    unitSel.addEventListener('change', updateHidden);
+
+    wrapper.appendChild(numInput);
+    wrapper.appendChild(unitSel);
+    wrapper.appendChild(hiddenInput);
+    updateHidden();
+
+    existingInput.replaceWith(wrapper);
+  } else if (operator === 'date_before') {
     if (existingInput.type !== 'date') {
       const dateInput = document.createElement('input');
       dateInput.type = 'date';
@@ -543,7 +676,25 @@ function toggleActionFields(select) {
   const elName = existingEl.name;
   const currentValue = existingEl.value;
 
-  if (actionType === 'mark_as_read' || actionType === 'delete') {
+  if (actionType === 'save_attachments') {
+    if (existingEl.tagName === 'SELECT') {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.name = elName;
+      input.className = 'form-control action-value';
+      existingEl.replaceWith(input);
+    }
+    const el = valueContainer.querySelector('.action-value');
+    el.style.display = 'none';
+    el.removeAttribute('required');
+    el.value = '';
+    const info = document.createElement('small');
+    info.className = 'text-muted action-info';
+    info.textContent = 'Attachments will be saved to DATA_DIR/attachments/<account>/<rule>/';
+    if (!valueContainer.querySelector('.action-info')) valueContainer.appendChild(info);
+  } else if (actionType === 'mark_as_read' || actionType === 'delete') {
+    const oldInfo = valueContainer.querySelector('.action-info');
+    if (oldInfo) oldInfo.remove();
     if (existingEl.tagName === 'SELECT') {
       const input = document.createElement('input');
       input.type = 'text';
@@ -556,6 +707,8 @@ function toggleActionFields(select) {
     el.removeAttribute('required');
     el.value = '';
   } else if (actionType === 'move_to_folder' || actionType === 'copy_to_folder') {
+    const oldInfo2 = valueContainer.querySelector('.action-info');
+    if (oldInfo2) oldInfo2.remove();
     fetchFoldersIfNeeded().then(folders => {
       const sel = document.createElement('select');
       sel.name = elName;
@@ -573,6 +726,8 @@ function toggleActionFields(select) {
       existingEl.replaceWith(sel);
     });
   } else if (actionType === 'add_label') {
+    const oldInfo3 = valueContainer.querySelector('.action-info');
+    if (oldInfo3) oldInfo3.remove();
     const labelSel = buildLabelSelectForAction(elName, currentValue);
     if (labelSel) {
       existingEl.replaceWith(labelSel);
@@ -718,7 +873,8 @@ function testRule() {
       logic: logic,
       conditions: conditions,
       actions: actions,
-      max_emails: 10
+      max_emails: 10,
+      monitored_folder: document.getElementById('monitored_folder').value
     })
   })
   .then(response => response.json())

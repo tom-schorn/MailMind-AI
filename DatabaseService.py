@@ -129,8 +129,11 @@ class EmailRuleApplication(Base):
     email_credential_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailcredential.id'), nullable=False)
     rule_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailrule.id'), nullable=False)
     email_uid: Mapped[str] = mapped_column(String(100), nullable=False)
+    email_subject: Mapped[str] = mapped_column(String(255), nullable=True)
     applied_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
     actions_taken: Mapped[str] = mapped_column(Text, nullable=True)
+
+    rule = relationship("EmailRule")
 
 
 class Label(Base):
@@ -144,6 +147,14 @@ class Label(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
 
     credential = relationship("EmailCredential", back_populates="labels")
+
+
+class WatcherReloadSignal(Base):
+    __tablename__ = "watcherreloadsignal"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    credential_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailcredential.id'), nullable=False)
+    signaled_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
 
 
 class DatabaseVersion(Base):
@@ -161,7 +172,7 @@ class DatabaseMigrator:
     def __init__(self, session: Session, logger: logging.Logger):
         self.session = session
         self.logger = logger
-        self.current_version = "1.3.0"
+        self.current_version = "1.4.0"
 
     def get_db_version(self) -> str:
         """Get current database version."""
@@ -208,6 +219,10 @@ class DatabaseMigrator:
         if db_version == "1.2.0":
             self._migrate_1_2_0_to_1_3_0()
             db_version = "1.3.0"
+
+        if db_version == "1.3.0":
+            self._migrate_1_3_0_to_1_4_0()
+            db_version = "1.4.0"
 
         self.logger.info(f"Migration completed to {self.current_version}")
 
@@ -310,6 +325,49 @@ class DatabaseMigrator:
             self.session.commit()
 
             self.logger.info("Migration 1.2.0 -> 1.3.0 completed successfully")
+
+        except Exception as e:
+            self.session.rollback()
+            self.logger.error(f"Migration failed: {e}")
+            raise
+
+
+    def _migrate_1_3_0_to_1_4_0(self) -> None:
+        """Migrate from v1.3.0 to v1.4.0 (add email_subject to EmailRuleApplication, add WatcherReloadSignal)."""
+        self.logger.info("Running migration 1.3.0 -> 1.4.0")
+
+        try:
+            # Add email_subject column to emailruleapplication
+            result = self.session.execute(
+                text("PRAGMA table_info(emailruleapplication)")
+            ).fetchall()
+            columns = [row[1] for row in result]
+
+            if 'email_subject' not in columns:
+                self.session.execute(text("""
+                    ALTER TABLE emailruleapplication ADD COLUMN email_subject VARCHAR(255)
+                """))
+                self.logger.info("Added email_subject column to emailruleapplication")
+
+            # Create watcherreloadsignal table
+            self.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS watcherreloadsignal (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    credential_id INTEGER NOT NULL,
+                    signaled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (credential_id) REFERENCES emailcredential (id)
+                )
+            """))
+            self.logger.info("Created watcherreloadsignal table")
+
+            version_record = DatabaseVersion(
+                version="1.4.0",
+                description="Add email_subject to EmailRuleApplication, add WatcherReloadSignal table"
+            )
+            self.session.add(version_record)
+            self.session.commit()
+
+            self.logger.info("Migration 1.3.0 -> 1.4.0 completed successfully")
 
         except Exception as e:
             self.session.rollback()

@@ -1,5 +1,7 @@
 import json
 import logging
+import os
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -17,7 +19,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from config_manager import load_config
 from LoggingService import LoggingService
 from utils import get_database_url
-from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, ProcessedEmail, EmailRuleApplication
+from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, ProcessedEmail, EmailRuleApplication, WatcherReloadSignal
 
 
 @dataclass
@@ -535,7 +537,7 @@ class ConditionEvaluator:
             return False, f"Field '{condition.field}' not found"
 
         try:
-            matched = self._apply_operator(field_value, condition.operator, condition.value, email.date)
+            matched = self._apply_operator(field_value, condition.operator, condition.value, email.date, field=condition.field.lower())
             reason = f"{condition.field} {condition.operator} '{condition.value}'"
 
             if matched:
@@ -570,10 +572,35 @@ class ConditionEvaluator:
         elif field == 'header':
             header_name = condition.value.split(':')[0] if ':' in condition.value else condition.value
             return email.headers.get(header_name, '')
+        elif field == 'has_attachment':
+            attachments = list(email.raw_message.attachments)
+            return 'yes' if len(attachments) > 0 else 'no'
+        elif field == 'attachment_count':
+            return str(len(list(email.raw_message.attachments)))
+        elif field == 'attachment_format':
+            formats = [att.content_type for att in email.raw_message.attachments if att.content_type]
+            return ','.join(formats)
+        elif field == 'attachment_filename':
+            filenames = [att.filename or '' for att in email.raw_message.attachments]
+            return ','.join(filenames)
+        elif field == 'attachment_size':
+            total = sum(att.size for att in email.raw_message.attachments)
+            return str(total)
         else:
             return None
 
-    def _apply_operator(self, field_value: str, operator: str, compare_value: str, email_date: datetime) -> bool:
+    @staticmethod
+    def _parse_size_value(value: str) -> float:
+        """Parse a size value with optional unit (KB, MB, GB) to bytes."""
+        value = value.strip().upper()
+        units = {'KB': 1024, 'MB': 1024 ** 2, 'GB': 1024 ** 3, 'B': 1}
+        for unit, factor in units.items():
+            if value.endswith(unit):
+                num = value[:-len(unit)].strip()
+                return float(num) * factor
+        return float(value)
+
+    def _apply_operator(self, field_value: str, operator: str, compare_value: str, email_date: datetime, field: str = None) -> bool:
         """Apply operator to compare field value with expected value."""
         operator = operator.lower()
 
@@ -594,12 +621,16 @@ class ConditionEvaluator:
 
         elif operator == 'greater_than':
             try:
+                if field == 'attachment_size':
+                    return float(field_value) > self._parse_size_value(compare_value)
                 return float(field_value) > float(compare_value)
             except ValueError:
                 return False
 
         elif operator == 'less_than':
             try:
+                if field == 'attachment_size':
+                    return float(field_value) < self._parse_size_value(compare_value)
                 return float(field_value) < float(compare_value)
             except ValueError:
                 return False
@@ -704,7 +735,7 @@ class RuleEngine:
         self.logger.info(f"Rule '{rule.name}' evaluation: {overall_match}")
         return overall_match, details
 
-    def execute_actions(self, email: EmailMessage, actions: list[RuleAction], dry_run: bool = False) -> list[str]:
+    def execute_actions(self, email: EmailMessage, actions: list[RuleAction], dry_run: bool = False, context: dict = None) -> list[str]:
         """
         Execute all actions for a matched rule.
 
@@ -712,6 +743,7 @@ class RuleEngine:
             email: EmailMessage to act upon
             actions: List of RuleAction objects
             dry_run: If True, only simulate actions
+            context: Optional dict with 'account_email' and 'rule_name' for actions like save_attachments
 
         Returns:
             List of action descriptions
@@ -725,7 +757,7 @@ class RuleEngine:
 
         for action in sorted_actions:
             try:
-                description = self._execute_action(email, action, dry_run)
+                description = self._execute_action(email, action, dry_run, context)
                 action_logs.append(description)
                 self.logger.info(f"{'[DRY-RUN] ' if dry_run else ''}Action: {description}")
 
@@ -740,16 +772,17 @@ class RuleEngine:
         """Sort actions by execution priority."""
         priority_order = {
             'mark_as_read': 1,
-            'add_label': 2,
-            'copy_to_folder': 3,
-            'modify_subject': 4,
-            'move_to_folder': 5,
-            'delete': 6
+            'save_attachments': 2,
+            'add_label': 3,
+            'copy_to_folder': 4,
+            'modify_subject': 5,
+            'move_to_folder': 6,
+            'delete': 7
         }
 
         return sorted(actions, key=lambda a: priority_order.get(a.action_type, 99))
 
-    def _execute_action(self, email: EmailMessage, action: RuleAction, dry_run: bool) -> str:
+    def _execute_action(self, email: EmailMessage, action: RuleAction, dry_run: bool, context: dict = None) -> str:
         """Execute a single action."""
         action_type = action.action_type.lower()
 
@@ -794,6 +827,43 @@ class RuleEngine:
         elif action_type == 'modify_subject':
             return f"modify_subject: {action.action_value} (not implemented)"
 
+        elif action_type == 'save_attachments':
+            attachments = list(email.raw_message.attachments)
+            if not attachments:
+                return "save_attachments: no attachments found"
+
+            if not dry_run:
+                data_dir = os.environ.get('DATA_DIR', 'data')
+                account_email = (context or {}).get('account_email', 'unknown')
+                rule_name = (context or {}).get('rule_name', 'unknown')
+
+                # Sanitize path components
+                safe_account = re.sub(r'[^\w@.\-]', '_', account_email)
+                safe_rule = re.sub(r'[^\w\-]', '_', rule_name)
+
+                save_dir = os.path.join(data_dir, 'attachments', safe_account, safe_rule)
+                os.makedirs(save_dir, exist_ok=True)
+
+                saved_files = []
+                for att in attachments:
+                    filename = att.filename or f'attachment_{email.uid}'
+                    # Prevent path traversal
+                    filename = os.path.basename(filename)
+                    filepath = os.path.join(save_dir, filename)
+
+                    if os.path.exists(filepath):
+                        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                        filename = f"{timestamp}_{filename}"
+                        filepath = os.path.join(save_dir, filename)
+
+                    with open(filepath, 'wb') as f:
+                        f.write(att.payload)
+                    saved_files.append(filename)
+                    self.logger.debug(f"Saved attachment: {filepath}")
+
+                return f"save_attachments: {len(saved_files)} files saved to {save_dir}"
+            return f"save_attachments: {len(attachments)} attachments would be saved"
+
         else:
             self.logger.warning(f"Unknown action type: {action_type}")
             return f"unknown_action: {action_type}"
@@ -824,13 +894,14 @@ class EmailProcessor:
         self.rule_engine = rule_engine
         self.logger = logger
 
-    def process_email(self, email: EmailMessage, credential_id: int) -> ProcessingResult:
+    def process_email(self, email: EmailMessage, credential_id: int, account_email: str = None) -> ProcessingResult:
         """
         Process a single email through all applicable rules.
 
         Args:
             email: EmailMessage to process
             credential_id: Email credential ID
+            account_email: Email address of the account (for save_attachments path)
 
         Returns:
             ProcessingResult with processing details
@@ -858,10 +929,11 @@ class EmailProcessor:
                     rules_matched.append(rule.id)
 
                     actions = self._load_actions(rule.id)
-                    action_logs = self.rule_engine.execute_actions(email, actions, dry_run=False)
+                    context = {'account_email': account_email or '', 'rule_name': rule.name}
+                    action_logs = self.rule_engine.execute_actions(email, actions, dry_run=False, context=context)
                     actions_taken.extend(action_logs)
 
-                    self._mark_as_processed(email.uid, credential_id, rule.id, json.dumps(action_logs))
+                    self._mark_as_processed(email.uid, credential_id, rule.id, json.dumps(action_logs), email.subject)
 
             except Exception as e:
                 error_msg = f"Error processing rule {rule.name}: {e}"
@@ -907,7 +979,7 @@ class EmailProcessor:
             rule_id=rule_id
         ).all()
 
-    def _mark_as_processed(self, email_uid: str, credential_id: int, rule_id: int, actions_taken: str) -> None:
+    def _mark_as_processed(self, email_uid: str, credential_id: int, rule_id: int, actions_taken: str, email_subject: str = None) -> None:
         """Mark email as processed by a specific rule."""
         try:
             application = EmailRuleApplication(
@@ -915,7 +987,8 @@ class EmailProcessor:
                 email_credential_id=credential_id,
                 rule_id=rule_id,
                 applied_at=datetime.now(),
-                actions_taken=actions_taken
+                actions_taken=actions_taken,
+                email_subject=email_subject[:255] if email_subject else None
             )
 
             self.session.add(application)
@@ -1199,60 +1272,95 @@ class EMailService:
         """
         Email watcher loop for a single credential.
         Starts separate watchers for each monitored folder.
+        Polls for reload signals to restart watchers when rules change.
 
         Args:
             credential: EmailCredential to watch
         """
         self.logger.info(f"Starting email watcher for {credential.email_address}")
 
-        session = self.session_factory()
-        try:
-            
-            rules = session.query(EmailRule).filter_by(
-                email_credential_id=credential.id,
-                enabled=True
-            ).all()
+        while not self.stop_event.is_set():
+            credential_stop = threading.Event()
 
-            monitored_folders = set()
-            for rule in rules:
-                folder = rule.monitored_folder if hasattr(rule, 'monitored_folder') and rule.monitored_folder else 'INBOX'
-                monitored_folders.add(folder)
+            session = self.session_factory()
+            try:
+                rules = session.query(EmailRule).filter_by(
+                    email_credential_id=credential.id,
+                    enabled=True
+                ).all()
 
-            if not monitored_folders:
-                monitored_folders.add('INBOX')
+                monitored_folders = set()
+                for rule in rules:
+                    folder = rule.monitored_folder if hasattr(rule, 'monitored_folder') and rule.monitored_folder else 'INBOX'
+                    monitored_folders.add(folder)
 
-            self.logger.info(f"Monitoring {len(monitored_folders)} folders: {monitored_folders}")
-        finally:
-            session.close()
+                if not monitored_folders:
+                    monitored_folders.add('INBOX')
 
-        folder_threads = []
-        for folder in monitored_folders:
-            folder_thread = threading.Thread(
-                target=self._folder_watcher,
-                args=(credential, folder),
-                daemon=True,
-                name=f"Watcher-{credential.email_address}-{folder}"
-            )
-            folder_thread.start()
-            folder_threads.append(folder_thread)
+                self.logger.info(f"Monitoring {len(monitored_folders)} folders for {credential.email_address}: {monitored_folders}")
+            finally:
+                session.close()
 
-        for thread in folder_threads:
-            thread.join()
+            folder_threads = []
+            for folder in monitored_folders:
+                folder_thread = threading.Thread(
+                    target=self._folder_watcher,
+                    args=(credential, folder, credential_stop),
+                    daemon=True,
+                    name=f"Watcher-{credential.email_address}-{folder}"
+                )
+                folder_thread.start()
+                folder_threads.append(folder_thread)
 
-    def _folder_watcher(self, credential: EmailCredential, folder: str) -> None:
+            # Poll for reload signals every 10 seconds
+            while not self.stop_event.is_set():
+                if self.stop_event.wait(timeout=10):
+                    break
+
+                session = self.session_factory()
+                try:
+                    signal = session.query(WatcherReloadSignal).filter_by(
+                        credential_id=credential.id
+                    ).first()
+
+                    if signal:
+                        self.logger.info(f"Reload signal received for {credential.email_address}, restarting watchers...")
+                        session.delete(signal)
+                        session.commit()
+
+                        # Stop current folder watchers
+                        credential_stop.set()
+                        for thread in folder_threads:
+                            thread.join(timeout=5)
+
+                        break  # Restart outer loop with new folder set
+                finally:
+                    session.close()
+            else:
+                # stop_event was set, stop everything
+                credential_stop.set()
+                for thread in folder_threads:
+                    thread.join(timeout=5)
+                break
+
+    def _folder_watcher(self, credential: EmailCredential, folder: str, credential_stop: threading.Event = None) -> None:
         """
         Watch a single folder for a credential.
 
         Args:
             credential: EmailCredential to watch
             folder: Folder name to monitor
+            credential_stop: Event to signal this watcher to stop for reload
         """
         self.logger.info(f"Starting folder watcher for {credential.email_address}/{folder}")
         base_delay = self.config.get('service', {}).get('imap_reconnect_delay', 30)
         max_delay = self.config.get('service', {}).get('imap_max_reconnect_delay', 300)
         current_delay = base_delay
 
-        while not self.stop_event.is_set():
+        def should_stop():
+            return self.stop_event.is_set() or (credential_stop and credential_stop.is_set())
+
+        while not should_stop():
             try:
                 imap_client = IMAPClient(credential, self.config, self.logger)
                 imap_client.connect()
@@ -1270,7 +1378,7 @@ class EMailService:
                     self._process_new_email(uid, credential.id, folder)
 
                 def stop_check():
-                    return self.stop_event.is_set()
+                    return should_stop()
 
                 imap_client.watch(callback, stop_check, folder)
                 current_delay = base_delay  # Reset on successful connection
@@ -1312,12 +1420,15 @@ class EMailService:
                 self.logger.warning(f"No IMAP client for credential {credential_id}/{folder}")
                 return
 
+            credential = session.query(EmailCredential).filter_by(id=credential_id).first()
+            account_email = credential.email_address if credential else ''
+
             email = imap_client.fetch_email(uid)
 
             rule_engine = RuleEngine(imap_client, self.logger)
             email_processor = EmailProcessor(session, rule_engine, self.logger)
 
-            result = email_processor.process_email(email, credential_id)
+            result = email_processor.process_email(email, credential_id, account_email=account_email)
 
             self.service_manager.increment_emails_processed()
             self.service_manager.increment_rules_executed()
@@ -1473,7 +1584,8 @@ class DryRunHandler:
 
         rule_engine = RuleEngine(imap_client, self.logger)
 
-        uids = imap_client.get_all_uids(limit=0)
+        folder = rule.monitored_folder or 'INBOX'
+        uids = imap_client.get_all_uids(folder=folder, limit=0)
         self.logger.info(f"Processing emails for dry-run (max 10 matches)")
 
         matched_count = 0

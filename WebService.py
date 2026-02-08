@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, DatabaseService
-from DatabaseService import DryRunRequest, DryRunResult, ServiceStatus, Label, ProcessedEmail, EmailRuleApplication
+from DatabaseService import DryRunRequest, DryRunResult, ServiceStatus, Label, ProcessedEmail, EmailRuleApplication, WatcherReloadSignal
 import os
 import re
 import json
@@ -83,6 +83,55 @@ _session_manager = TestSessionManager()
 def get_session_manager() -> TestSessionManager:
     """Get the global session manager."""
     return _session_manager
+
+
+def _signal_watcher_reload(session, credential_id: int) -> None:
+    """Signal the email watcher to reload rules for a credential."""
+    existing = session.query(WatcherReloadSignal).filter_by(credential_id=credential_id).first()
+    if existing:
+        existing.signaled_at = datetime.now()
+    else:
+        session.add(WatcherReloadSignal(credential_id=credential_id))
+    session.commit()
+
+
+def _format_actions(actions_json: str) -> str:
+    """Format raw actions JSON into human-readable text."""
+    if not actions_json:
+        return 'N/A'
+    try:
+        actions = json.loads(actions_json)
+    except (json.JSONDecodeError, TypeError):
+        return actions_json[:80] if actions_json else 'N/A'
+
+    labels = {
+        'move_to_folder': 'Moved to',
+        'copy_to_folder': 'Copied to',
+        'add_label': 'Label:',
+        'mark_as_read': 'Marked as read',
+        'delete': 'Deleted',
+        'modify_subject': 'Subject modified:',
+        'save_attachments': 'Attachments saved',
+    }
+
+    formatted = []
+    for action in actions:
+        if isinstance(action, str):
+            if ':' in action:
+                action_type, _, value = action.partition(':')
+                action_type = action_type.strip()
+                value = value.strip()
+                label = labels.get(action_type, action_type)
+                if value:
+                    formatted.append(f"{label} {value}")
+                else:
+                    formatted.append(label)
+            else:
+                formatted.append(labels.get(action.strip(), action))
+        else:
+            formatted.append(str(action))
+
+    return ', '.join(formatted) if formatted else 'N/A'
 
 
 # Load environment variables from .env file
@@ -231,9 +280,20 @@ def account_dashboard(id):
             service_name='EmailService'
         ).first()
 
-        recent_activity = session.query(EmailRuleApplication).filter_by(
+        recent_activity_raw = session.query(EmailRuleApplication).filter_by(
             email_credential_id=id
-        ).order_by(EmailRuleApplication.applied_at.desc()).limit(5).all()
+        ).order_by(EmailRuleApplication.applied_at.desc()).limit(10).all()
+
+        recent_activity = []
+        for activity in recent_activity_raw:
+            rule_name = activity.rule.name if activity.rule else f'Rule #{activity.rule_id}'
+            actions_display = _format_actions(activity.actions_taken)
+            recent_activity.append({
+                'email_subject': activity.email_subject or f'UID {activity.email_uid}',
+                'rule_name': rule_name,
+                'actions_display': actions_display,
+                'applied_at': activity.applied_at
+            })
 
         return render_template('accounts/dashboard.html',
                              account=account,
@@ -254,8 +314,12 @@ def account_rules(id):
             flash('Account not found!', 'danger')
             return redirect(url_for('list_accounts'))
 
-        rules = session.query(EmailRule).filter_by(email_credential_id=id).all()
-        return render_template('accounts/rules/list.html', account=account, rules=rules)
+        rules = session.query(EmailRule).filter_by(email_credential_id=id).order_by(EmailRule.monitored_folder).all()
+        grouped_rules = {}
+        for rule in rules:
+            folder = rule.monitored_folder or 'INBOX'
+            grouped_rules.setdefault(folder, []).append(rule)
+        return render_template('accounts/rules/list.html', account=account, grouped_rules=grouped_rules)
     finally:
         session.close()
 
@@ -301,13 +365,14 @@ def account_add_rule(id):
                 action = RuleAction(
                     rule_id=rule.id,
                     action_type=action_type,
-                    action_value=action_value,
+                    action_value=action_value or '',
                     folder=action_value if action_type in ['move_to_folder', 'copy_to_folder'] else None,
                     label=action_value if action_type == 'add_label' else None
                 )
                 session.add(action)
 
             session.commit()
+            _signal_watcher_reload(session, id)
             flash('Email rule added successfully!', 'success')
             return redirect(url_for('account_rules', id=id))
         except Exception as e:
@@ -370,13 +435,14 @@ def account_edit_rule(id, rule_id):
                 action = RuleAction(
                     rule_id=rule.id,
                     action_type=action_type,
-                    action_value=action_value,
+                    action_value=action_value or '',
                     folder=action_value if action_type in ['move_to_folder', 'copy_to_folder'] else None,
                     label=action_value if action_type == 'add_label' else None
                 )
                 session.add(action)
 
             session.commit()
+            _signal_watcher_reload(session, id)
             flash('Email rule updated successfully!', 'success')
             return redirect(url_for('account_rules', id=id))
 
@@ -397,8 +463,10 @@ def account_delete_rule(id, rule_id):
         if rule:
             session.query(RuleCondition).filter_by(rule_id=rule_id).delete()
             session.query(RuleAction).filter_by(rule_id=rule_id).delete()
+            credential_id = rule.email_credential_id
             session.delete(rule)
             session.commit()
+            _signal_watcher_reload(session, credential_id)
             flash('Email rule deleted successfully!', 'success')
         else:
             flash('Rule not found!', 'danger')
@@ -953,6 +1021,7 @@ def test_rule_preview():
         conditions = data.get('conditions', [])
         actions = data.get('actions', [])
         max_emails = data.get('max_emails', 10)
+        monitored_folder = data.get('monitored_folder', 'INBOX')
 
         session_id = str(uuid.uuid4())
         session_mgr = get_session_manager()
@@ -975,10 +1044,10 @@ def test_rule_preview():
                 test_session.add_log('INFO', 'Starting dry-run test...')
                 logger.info("Starting dry-run test")
 
-                test_session.add_log('INFO', 'Fetching emails from inbox...')
-                uids = imap_client.get_all_uids(limit=100)
-                logger.info(f"Found {len(uids)} total emails in inbox")
-                test_session.add_log('INFO', f'Found {len(uids)} emails in inbox')
+                test_session.add_log('INFO', f'Fetching emails from {monitored_folder}...')
+                uids = imap_client.get_all_uids(folder=monitored_folder, limit=100)
+                logger.info(f"Found {len(uids)} total emails in {monitored_folder}")
+                test_session.add_log('INFO', f'Found {len(uids)} emails in {monitored_folder}')
 
                 evaluator = ConditionEvaluator(logger)
                 results = []
@@ -1045,6 +1114,8 @@ def test_rule_preview():
                                 actions_would_apply.append("delete")
                             elif action_type == 'modify_subject':
                                 actions_would_apply.append(f"modify_subject: {action_value}")
+                            elif action_type == 'save_attachments':
+                                actions_would_apply.append("save_attachments")
 
                         results.append({
                             'email_uid': uid,
