@@ -96,6 +96,91 @@ def _signal_watcher_reload(session, credential_id: int) -> None:
     session.commit()
 
 
+def _delete_spam_auto_rules(session, credential_id: int) -> None:
+    """Delete all auto-generated spam rules for a credential."""
+    auto_rules = session.query(EmailRule).filter(
+        EmailRule.email_credential_id == credential_id,
+        EmailRule.name.like('[Auto-Spam]%')
+    ).all()
+    for rule in auto_rules:
+        session.delete(rule)
+    session.flush()
+
+
+def _create_spam_auto_rules(session, credential_id: int, spam_config) -> None:
+    """Create auto-generated spam rules based on spam config settings."""
+    spam_folder = spam_config.spam_folder or 'Spam'
+
+    if spam_config.auto_categorize:
+        categories = [
+            ('Phishing', 'phishing'),
+            ('Scam', 'scam'),
+            ('Spam', 'spam'),
+            ('Malware', 'malware'),
+            ('Adult', 'adult'),
+        ]
+        subfolder_map = {
+            'Phishing': 'Phishing',
+            'Scam': 'Scam',
+            'Spam': 'General',
+            'Malware': 'Malware',
+            'Adult': 'Adult',
+        }
+        for label, category in categories:
+            rule = EmailRule(
+                email_credential_id=credential_id,
+                name=f"[Auto-Spam] {label}",
+                enabled=True,
+                condition="AND",
+                actions="",
+                monitored_folder="INBOX"
+            )
+            session.add(rule)
+            session.flush()
+
+            session.add(RuleCondition(
+                rule_id=rule.id,
+                field="spam_category",
+                operator="equals",
+                value=category
+            ))
+
+            target_folder = f"{spam_folder}/{subfolder_map[label]}"
+            session.add(RuleAction(
+                rule_id=rule.id,
+                action_type="move_to_folder",
+                action_value=target_folder,
+                folder=target_folder
+            ))
+    else:
+        rule = EmailRule(
+            email_credential_id=credential_id,
+            name="[Auto-Spam] Filter",
+            enabled=True,
+            condition="AND",
+            actions="",
+            monitored_folder="INBOX"
+        )
+        session.add(rule)
+        session.flush()
+
+        session.add(RuleCondition(
+            rule_id=rule.id,
+            field="spam_score",
+            operator="greater_than",
+            value="0.5"
+        ))
+
+        session.add(RuleAction(
+            rule_id=rule.id,
+            action_type="move_to_folder",
+            action_value=spam_folder,
+            folder=spam_folder
+        ))
+
+    session.flush()
+
+
 def _format_actions(actions_json: str) -> str:
     """Format raw actions JSON into human-readable text."""
     if not actions_json:
@@ -769,12 +854,24 @@ def account_spam_settings(id):
             spam_config.auto_categorize = 'auto_categorize' in request.form
 
             session.commit()
+
+            _delete_spam_auto_rules(session, id)
+            if spam_config.enabled:
+                _create_spam_auto_rules(session, id, spam_config)
+            session.commit()
+            _signal_watcher_reload(session, id)
+
             flash('Spam detection settings saved!', 'success')
             return redirect(url_for('account_spam_settings', id=id))
 
         spam_config = session.query(SpamConfig).filter_by(credential_id=id).first()
         whitelist = session.query(WhitelistEntry).filter_by(credential_id=id).order_by(WhitelistEntry.added_at.desc()).all()
         blacklist = session.query(BlacklistEntry).filter_by(credential_id=id).order_by(BlacklistEntry.added_at.desc()).all()
+
+        auto_rules = session.query(EmailRule).filter(
+            EmailRule.email_credential_id == id,
+            EmailRule.name.like('[Auto-Spam]%')
+        ).all()
 
         api_key_configured = bool(os.environ.get('ANTHROPIC_API_KEY'))
 
@@ -783,6 +880,7 @@ def account_spam_settings(id):
                              spam_config=spam_config,
                              whitelist=whitelist,
                              blacklist=blacklist,
+                             auto_rules=auto_rules,
                              api_key_configured=api_key_configured)
     except Exception as e:
         session.rollback()
