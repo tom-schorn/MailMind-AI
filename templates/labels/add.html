@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Add Label - MailMind AI{% endblock %}
+
+{% block page_title %}Add Label{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('list_labels') }}">Labels</a></li>
+<li class="breadcrumb-item active">Add</li>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="row">
+    <div class="col-lg-8">
+
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">New Label</h5>
+
+          <form class="row g-3" method="POST" action="{{ url_for('add_label_page') }}">
+            <div class="col-md-12">
+              <label for="credential_id" class="form-label">Email Account</label>
+              <select class="form-select" id="credential_id" name="credential_id" required>
+                <option value="">Select an email account...</option>
+                {% for account in accounts %}
+                <option value="{{ account.id }}">{{ account.email_address }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-8">
+              <label for="name" class="form-label">Label Name</label>
+              <input type="text" class="form-control" id="name" name="name" required>
+            </div>
+
+            <div class="col-md-4">
+              <label for="color" class="form-label">Color</label>
+              <input type="color" class="form-control form-control-color" id="color" name="color" value="#0d6efd">
+            </div>
+
+            <div class="text-center">
+              <button type="submit" class="btn btn-primary">Create Label</button>
+              <a href="{{ url_for('list_labels') }}" class="btn btn-secondary">Cancel</a>
+            </div>
+          </form>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+{% endblock %}
