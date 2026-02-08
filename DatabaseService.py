@@ -1,5 +1,5 @@
 import logging
-from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey, func, text, create_engine
+from sqlalchemy import String, Integer, Float, Boolean, Text, DateTime, ForeignKey, func, text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, relationship, sessionmaker
 
 
@@ -157,6 +157,54 @@ class WatcherReloadSignal(Base):
     signaled_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
 
 
+class SpamConfig(Base):
+    __tablename__ = "spamconfig"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    credential_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailcredential.id'), unique=True, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    sensitivity: Mapped[int] = mapped_column(Integer, default=5)
+    model: Mapped[str] = mapped_column(String(20), default='haiku')
+    spam_folder: Mapped[str] = mapped_column(String(255), default='Spam')
+    auto_categorize: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
+    changed_at: Mapped[DateTime] = mapped_column(DateTime, onupdate=func.current_timestamp())
+
+
+class SpamAnalysis(Base):
+    __tablename__ = "spamanalysis"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    credential_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailcredential.id'), nullable=False)
+    email_uid: Mapped[str] = mapped_column(String(50), nullable=False)
+    spam_score: Mapped[float] = mapped_column(Float, nullable=True)
+    spam_category: Mapped[str] = mapped_column(String(20), nullable=True)
+    analysis_json: Mapped[str] = mapped_column(Text, nullable=True)
+    email_subject: Mapped[str] = mapped_column(String(255), nullable=True)
+    email_from: Mapped[str] = mapped_column(String(255), nullable=True)
+    analyzed_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
+
+
+class WhitelistEntry(Base):
+    __tablename__ = "whitelistentry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    credential_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailcredential.id'), nullable=False)
+    domain: Mapped[str] = mapped_column(String(255), nullable=False)
+    added_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
+    reason: Mapped[str] = mapped_column(String(255), nullable=True)
+
+
+class BlacklistEntry(Base):
+    __tablename__ = "blacklistentry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    credential_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailcredential.id'), nullable=False)
+    domain: Mapped[str] = mapped_column(String(255), nullable=False)
+    added_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
+    reason: Mapped[str] = mapped_column(String(255), nullable=True)
+
+
 class DatabaseVersion(Base):
     __tablename__ = "databaseversion"
 
@@ -172,7 +220,7 @@ class DatabaseMigrator:
     def __init__(self, session: Session, logger: logging.Logger):
         self.session = session
         self.logger = logger
-        self.current_version = "1.4.0"
+        self.current_version = "1.5.0"
 
     def get_db_version(self) -> str:
         """Get current database version."""
@@ -223,6 +271,10 @@ class DatabaseMigrator:
         if db_version == "1.3.0":
             self._migrate_1_3_0_to_1_4_0()
             db_version = "1.4.0"
+
+        if db_version == "1.4.0":
+            self._migrate_1_4_0_to_1_5_0()
+            db_version = "1.5.0"
 
         self.logger.info(f"Migration completed to {self.current_version}")
 
@@ -368,6 +420,81 @@ class DatabaseMigrator:
             self.session.commit()
 
             self.logger.info("Migration 1.3.0 -> 1.4.0 completed successfully")
+
+        except Exception as e:
+            self.session.rollback()
+            self.logger.error(f"Migration failed: {e}")
+            raise
+
+    def _migrate_1_4_0_to_1_5_0(self) -> None:
+        """Migrate from v1.4.0 to v1.5.0 (add spam detection tables)."""
+        self.logger.info("Running migration 1.4.0 -> 1.5.0")
+
+        try:
+            self.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS spamconfig (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    credential_id INTEGER NOT NULL UNIQUE,
+                    enabled BOOLEAN DEFAULT 0,
+                    sensitivity INTEGER DEFAULT 5,
+                    model VARCHAR(20) DEFAULT 'haiku',
+                    spam_folder VARCHAR(255) DEFAULT 'Spam',
+                    auto_categorize BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    changed_at TIMESTAMP,
+                    FOREIGN KEY (credential_id) REFERENCES emailcredential (id)
+                )
+            """))
+            self.logger.info("Created spamconfig table")
+
+            self.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS spamanalysis (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    credential_id INTEGER NOT NULL,
+                    email_uid VARCHAR(50) NOT NULL,
+                    spam_score FLOAT,
+                    spam_category VARCHAR(20),
+                    analysis_json TEXT,
+                    email_subject VARCHAR(255),
+                    email_from VARCHAR(255),
+                    analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (credential_id) REFERENCES emailcredential (id)
+                )
+            """))
+            self.logger.info("Created spamanalysis table")
+
+            self.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS whitelistentry (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    credential_id INTEGER NOT NULL,
+                    domain VARCHAR(255) NOT NULL,
+                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reason VARCHAR(255),
+                    FOREIGN KEY (credential_id) REFERENCES emailcredential (id)
+                )
+            """))
+            self.logger.info("Created whitelistentry table")
+
+            self.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS blacklistentry (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    credential_id INTEGER NOT NULL,
+                    domain VARCHAR(255) NOT NULL,
+                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reason VARCHAR(255),
+                    FOREIGN KEY (credential_id) REFERENCES emailcredential (id)
+                )
+            """))
+            self.logger.info("Created blacklistentry table")
+
+            version_record = DatabaseVersion(
+                version="1.5.0",
+                description="Add spam detection tables (SpamConfig, SpamAnalysis, WhitelistEntry, BlacklistEntry)"
+            )
+            self.session.add(version_record)
+            self.session.commit()
+
+            self.logger.info("Migration 1.4.0 -> 1.5.0 completed successfully")
 
         except Exception as e:
             self.session.rollback()
