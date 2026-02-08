@@ -77,6 +77,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0-pre] - 2026-02-08
+
+### Added
+- restructure UI to account-centric navigation
+
+### Fixed
+- resolve code review issues in account-scoped routes
+
+
 ## [1.6.0-pre] - 2026-02-08
 
 ### Added
