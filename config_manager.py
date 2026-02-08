@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from utils import get_config_file, ensure_data_dir
 
@@ -19,6 +20,9 @@ def get_default_config():
             'heartbeat_interval': 10,
             'dry_run_poll_interval': 5,
             'imap_reconnect_delay': 30,
+            'imap_max_reconnect_delay': 300,
+            'imap_idle_cycle_timeout': 180,
+            'imap_max_connection_age': 1500,
             'use_imap_idle': True,
             'imap_poll_interval': 60
         }
@@ -35,7 +39,8 @@ def load_config():
     try:
         with open(config_file, 'r') as f:
             return json.load(f)
-    except (json.JSONDecodeError, IOError):
+    except (json.JSONDecodeError, IOError) as e:
+        logging.getLogger('MailMind').warning(f"Config file corrupt or unreadable ({e}), using defaults")
         return get_default_config()
 
 def save_config(data):

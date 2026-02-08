@@ -1,7 +1,6 @@
-anthropic
-python-dotenv
-flask
-flask-sqlalchemy
-imap-tools
-
-sqlalchemy
+anthropic==0.40.0
+python-dotenv==1.0.1
+flask==3.1.0
+flask-sqlalchemy==3.1.1
+imap-tools==1.11.1
+sqlalchemy==2.0.46

@@ -4,10 +4,11 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from email.message import Message
 from typing import Callable, Optional, Dict, Tuple
 import socket
 import errno
+import imaplib
+import ssl
 
 from imap_tools import MailBox, AND, MailMessage
 from sqlalchemy import create_engine
@@ -93,8 +94,8 @@ class IMAPClient:
             if self.mailbox:
                 try:
                     self.mailbox.logout()
-                except:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Logout during reconnect failed: {e}")
             self.connected = False
             self.connect()
             self.logger.info("Reconnection successful")
@@ -367,43 +368,64 @@ class IMAPClient:
             raise
 
     def _watch_idle(self, callback: Callable, stop_check: Callable, folder: str = 'INBOX') -> None:
-        """Watch using IMAP IDLE command with auto-reconnect."""
+        """Watch using IMAP IDLE command with proactive reconnect (RFC 2177 hybrid)."""
+        idle_cycle_timeout = self.config.get('service', {}).get('imap_idle_cycle_timeout', 180)
+        max_connection_age = self.config.get('service', {}).get('imap_max_connection_age', 1500)
+
+        connection_start = time.monotonic()
         self.mailbox.folder.set(folder)
         last_uids = set(self.get_all_uids(folder))
 
         while not stop_check():
             try:
-                responses = self.mailbox.idle.wait(timeout=30)
+                # Proactive reconnect after max_connection_age (default 25 min)
+                connection_age = time.monotonic() - connection_start
+                if connection_age >= max_connection_age:
+                    self.logger.info(f"Proactive reconnect after {connection_age:.0f}s")
+                    self.reconnect()
+                    self.mailbox.folder.set(folder)
+                    current_uids = set(self.get_all_uids(folder))
+                    new_uids = current_uids - last_uids
+                    for uid in new_uids:
+                        self.logger.info(f"New email detected during reconnect: {uid}")
+                        callback(uid)
+                    last_uids = current_uids
+                    connection_start = time.monotonic()
+                    continue
+
+                # 3-min IDLE cycle (default)
+                responses = self.mailbox.idle.wait(timeout=idle_cycle_timeout)
 
                 if responses:
                     current_uids = set(self.get_all_uids(folder))
                     new_uids = current_uids - last_uids
-
                     for uid in new_uids:
                         self.logger.info(f"New email detected: {uid}")
                         callback(uid)
-
                     last_uids = current_uids
 
-            except (socket.error, OSError) as e:
-                if hasattr(e, 'errno') and e.errno in (errno.EPIPE, errno.ECONNRESET):
-                    self.logger.warning("Socket error in IDLE watch, reconnecting...")
-                    try:
-                        self.reconnect()
-                        self.mailbox.folder.set(folder)
-                        last_uids = set(self.get_all_uids(folder))
-                    except Exception as reconnect_error:
-                        self.logger.error(f"Reconnection failed: {reconnect_error}")
-                        time.sleep(5)
-                else:
-                    self.logger.error(f"Socket error in IDLE watch: {e}")
+            except (socket.error, OSError, imaplib.IMAP4.abort, TimeoutError,
+                    ssl.SSLError, BrokenPipeError, ConnectionError) as e:
+                self.logger.warning(f"Connection error in IDLE watch: {e}")
+                try:
+                    self.reconnect()
+                    self.mailbox.folder.set(folder)
+                    current_uids = set(self.get_all_uids(folder))
+                    new_uids = current_uids - last_uids
+                    for uid in new_uids:
+                        self.logger.info(f"New email detected after reconnect: {uid}")
+                        callback(uid)
+                    last_uids = current_uids
+                    connection_start = time.monotonic()
+                except Exception as reconnect_error:
+                    self.logger.error(f"Reconnection failed: {reconnect_error}")
                     time.sleep(5)
             except Exception as e:
-                self.logger.error(f"Error in IDLE watch: {e}")
+                self.logger.error(f"Unexpected error in IDLE watch: {e}")
                 time.sleep(5)
 
     def _watch_polling(self, callback: Callable, stop_check: Callable, folder: str = 'INBOX', interval: int = 60) -> None:
-        """Watch using polling with auto-reconnect on broken pipe."""
+        """Watch using polling with auto-reconnect on connection errors."""
         self.mailbox.folder.set(folder)
         last_uids = set(self.get_all_uids(folder))
 
@@ -412,8 +434,11 @@ class IMAPClient:
                 # Send NOOP to keep connection alive before sleeping
                 try:
                     self.mailbox.client.noop()
-                except:
-                    pass
+                except (socket.error, OSError, imaplib.IMAP4.abort, TimeoutError,
+                        ssl.SSLError, BrokenPipeError, ConnectionError) as e:
+                    self.logger.warning(f"NOOP keepalive failed, reconnecting: {e}")
+                    self.reconnect()
+                    self.mailbox.folder.set(folder)
 
                 time.sleep(interval)
 
@@ -426,21 +451,23 @@ class IMAPClient:
 
                 last_uids = current_uids
 
-            except (socket.error, OSError) as e:
-                if hasattr(e, 'errno') and e.errno in (errno.EPIPE, errno.ECONNRESET):
-                    self.logger.warning("Socket error in polling watch, reconnecting...")
-                    try:
-                        self.reconnect()
-                        self.mailbox.folder.set(folder)
-                        last_uids = set(self.get_all_uids(folder))
-                    except Exception as reconnect_error:
-                        self.logger.error(f"Reconnection failed: {reconnect_error}")
-                        time.sleep(5)
-                else:
-                    self.logger.error(f"Socket error in polling watch: {e}")
+            except (socket.error, OSError, imaplib.IMAP4.abort, TimeoutError,
+                    ssl.SSLError, BrokenPipeError, ConnectionError) as e:
+                self.logger.warning(f"Connection error in polling watch: {e}")
+                try:
+                    self.reconnect()
+                    self.mailbox.folder.set(folder)
+                    current_uids = set(self.get_all_uids(folder))
+                    new_uids = current_uids - last_uids
+                    for uid in new_uids:
+                        self.logger.info(f"New email detected after reconnect: {uid}")
+                        callback(uid)
+                    last_uids = current_uids
+                except Exception as reconnect_error:
+                    self.logger.error(f"Reconnection failed: {reconnect_error}")
                     time.sleep(5)
             except Exception as e:
-                self.logger.error(f"Error in polling watch: {e}")
+                self.logger.error(f"Unexpected error in polling watch: {e}")
                 time.sleep(5)
 
 
@@ -1165,7 +1192,9 @@ class EMailService:
             folder: Folder name to monitor
         """
         self.logger.info(f"Starting folder watcher for {credential.email_address}/{folder}")
-        reconnect_delay = self.config.get('service', {}).get('imap_reconnect_delay', 30)
+        base_delay = self.config.get('service', {}).get('imap_reconnect_delay', 30)
+        max_delay = self.config.get('service', {}).get('imap_max_reconnect_delay', 300)
+        current_delay = base_delay
 
         while not self.stop_event.is_set():
             try:
@@ -1188,10 +1217,13 @@ class EMailService:
                     return self.stop_event.is_set()
 
                 imap_client.watch(callback, stop_check, folder)
+                current_delay = base_delay  # Reset on successful connection
 
             except Exception as e:
                 self.logger.error(f"Error in folder watcher for {folder}: {e}")
-                time.sleep(reconnect_delay)
+                self.logger.info(f"Retrying in {current_delay}s...")
+                time.sleep(current_delay)
+                current_delay = min(current_delay * 2, max_delay)
 
             finally:
                 client_key = f"{credential.id}_{folder}"
@@ -1199,8 +1231,8 @@ class EMailService:
                     try:
                         self.imap_clients[client_key].disconnect()
                         del self.imap_clients[client_key]
-                    except:
-                        pass
+                    except Exception as e:
+                        self.logger.debug(f"Client disconnect cleanup failed: {e}")
 
     def _process_new_email(self, uid: str, credential_id: int, folder: str = 'INBOX') -> None:
         """
