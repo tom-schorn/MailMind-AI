@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+
+{% block title %}Spam Detection - {{ account.email_address }} - MailMind AI{% endblock %}
+
+{% block page_title %}Spam Detection{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('list_accounts') }}">Email Accounts</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('account_dashboard', id=account.id) }}">{{ account.email_address }}</a></li>
+<li class="breadcrumb-item active">Spam Detection</li>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="row">
+    <div class="col-lg-8">
+
+      <!-- Spam Detection Settings -->
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Spam Detection Settings</h5>
+
+          <form method="POST" action="{{ url_for('account_spam_settings', id=account.id) }}">
+
+            <div class="row mb-3">
+              <label class="col-sm-3 col-form-label">Enable</label>
+              <div class="col-sm-9">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="enabled" name="enabled"
+                    {% if spam_config and spam_config.enabled %}checked{% endif %}>
+                  <label class="form-check-label" for="enabled">Spam detection active</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <label class="col-sm-3 col-form-label">API Key Status</label>
+              <div class="col-sm-9">
+                {% if api_key_configured %}
+                  <span class="badge bg-success">Connected</span>
+                  <small class="text-muted ms-2">ANTHROPIC_API_KEY is set in .env</small>
+                {% else %}
+                  <span class="badge bg-warning">Not Configured</span>
+                  <small class="text-muted ms-2">Set ANTHROPIC_API_KEY in your .env file</small>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <label for="model" class="col-sm-3 col-form-label">AI Model</label>
+              <div class="col-sm-9">
+                <select class="form-select" id="model" name="model">
+                  <option value="haiku" {% if not spam_config or spam_config.model == 'haiku' %}selected{% endif %}>Haiku (Recommended - Fast & Cheap)</option>
+                  <option value="sonnet" {% if spam_config and spam_config.model == 'sonnet' %}selected{% endif %}>Sonnet (More Accurate)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <label for="sensitivity" class="col-sm-3 col-form-label">Sensitivity</label>
+              <div class="col-sm-9">
+                <input type="range" class="form-range" id="sensitivity" name="sensitivity"
+                  min="1" max="10" value="{{ spam_config.sensitivity if spam_config else 5 }}"
+                  oninput="document.getElementById('sensitivity-label').textContent = this.value">
+                <div class="d-flex justify-content-between">
+                  <small class="text-muted">1 - Lenient</small>
+                  <strong id="sensitivity-label">{{ spam_config.sensitivity if spam_config else 5 }}</strong>
+                  <small class="text-muted">10 - Strict</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <label for="spam_folder" class="col-sm-3 col-form-label">Spam Folder</label>
+              <div class="col-sm-9">
+                <input type="text" class="form-control" id="spam_folder" name="spam_folder"
+                  value="{{ spam_config.spam_folder if spam_config else 'Spam' }}">
+                <small class="text-muted">IMAP folder for spam emails (used in rules)</small>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <label class="col-sm-3 col-form-label">Auto-Categorize</label>
+              <div class="col-sm-9">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="auto_categorize" name="auto_categorize"
+                    {% if not spam_config or spam_config.auto_categorize %}checked{% endif %}>
+                  <label class="form-check-label" for="auto_categorize">Create subfolders (Spam/Phishing, Spam/Scam, etc.)</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="text-center">
+              <button type="submit" class="btn btn-primary">Save Settings</button>
+            </div>
+          </form>
+
+        </div>
+      </div>
+
+      <!-- Whitelist -->
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Whitelist (Trusted Domains)</h5>
+          <p class="text-muted">Emails from these domains skip spam analysis and are marked as legitimate.</p>
+
+          <div class="input-group mb-3">
+            <input type="text" class="form-control" id="whitelist-domain" placeholder="example.com">
+            <input type="text" class="form-control" id="whitelist-reason" placeholder="Reason (optional)">
+            <button class="btn btn-success" type="button" onclick="addWhitelistDomain()">Add</button>
+          </div>
+
+          <div class="mb-3">
+            <button class="btn btn-sm btn-outline-secondary" onclick="importDefaults()">Import Defaults (Google, Apple, Amazon, etc.)</button>
+          </div>
+
+          <table class="table table-sm table-hover" id="whitelist-table">
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Added</th>
+                <th>Reason</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for entry in whitelist %}
+              <tr id="wl-{{ entry.id }}">
+                <td>{{ entry.domain }}</td>
+                <td><small>{{ entry.added_at.strftime('%Y-%m-%d') if entry.added_at else 'N/A' }}</small></td>
+                <td><small class="text-muted">{{ entry.reason or '' }}</small></td>
+                <td>
+                  <button class="btn btn-sm btn-danger" onclick="deleteWhitelist({{ entry.id }})">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </td>
+              </tr>
+              {% else %}
+              <tr id="wl-empty">
+                <td colspan="4" class="text-center text-muted">No whitelisted domains.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Blacklist -->
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Blacklist (Blocked Domains)</h5>
+          <p class="text-muted">Emails from these domains skip spam analysis and are marked as spam (score=1.0).</p>
+
+          <div class="input-group mb-3">
+            <input type="text" class="form-control" id="blacklist-domain" placeholder="example.com">
+            <input type="text" class="form-control" id="blacklist-reason" placeholder="Reason (optional)">
+            <button class="btn btn-danger" type="button" onclick="addBlacklistDomain()">Add</button>
+          </div>
+
+          <table class="table table-sm table-hover" id="blacklist-table">
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Added</th>
+                <th>Reason</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for entry in blacklist %}
+              <tr id="bl-{{ entry.id }}">
+                <td>{{ entry.domain }}</td>
+                <td><small>{{ entry.added_at.strftime('%Y-%m-%d') if entry.added_at else 'N/A' }}</small></td>
+                <td><small class="text-muted">{{ entry.reason or '' }}</small></td>
+                <td>
+                  <button class="btn btn-sm btn-danger" onclick="deleteBlacklist({{ entry.id }})">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </td>
+              </tr>
+              {% else %}
+              <tr id="bl-empty">
+                <td colspan="4" class="text-center text-muted">No blacklisted domains.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Quick Links</h5>
+          <a href="{{ url_for('account_spam_log', id=account.id) }}" class="btn btn-sm btn-outline-info d-block mb-2">
+            <i class="bi bi-journal-text"></i> Analysis Log
+          </a>
+          <a href="{{ url_for('account_rules', id=account.id) }}" class="btn btn-sm btn-outline-primary d-block mb-2">
+            <i class="bi bi-funnel"></i> Rules
+          </a>
+          <a href="{{ url_for('account_dashboard', id=account.id) }}" class="btn btn-sm btn-outline-secondary d-block">
+            <i class="bi bi-arrow-left"></i> Back to Dashboard
+          </a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Spam Categories</h5>
+          <ul class="list-unstyled">
+            <li><span class="badge bg-success">legitimate</span> Normal correspondence</li>
+            <li><span class="badge bg-info">newsletter</span> Opted-in newsletters</li>
+            <li><span class="badge bg-secondary">commercial</span> Marketing/ads</li>
+            <li><span class="badge bg-warning text-dark">spam</span> Unsolicited bulk mail</li>
+            <li><span class="badge bg-danger">scam</span> Fraud attempts</li>
+            <li><span class="badge bg-danger">phishing</span> Credential theft</li>
+            <li><span class="badge bg-dark">malware</span> Malicious software</li>
+            <li><span class="badge bg-secondary">adult</span> Adult content</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Usage with Rules</h5>
+          <p class="small text-muted">
+            After enabling spam detection, you can create rules using the <code>spam_score</code> and <code>spam_category</code> condition fields.
+          </p>
+          <p class="small text-muted">
+            Example: <em>"IF spam_category equals phishing THEN move_to_folder Spam/Phishing"</em>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const credentialId = {{ account.id }};
+
+function addWhitelistDomain() {
+  const domain = document.getElementById('whitelist-domain').value.trim();
+  const reason = document.getElementById('whitelist-reason').value.trim();
+  if (!domain) { alert('Please enter a domain.'); return; }
+
+  fetch(`/api/spam/whitelist/${credentialId}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({domain: domain, reason: reason})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) { alert('Error: ' + data.error); return; }
+    location.reload();
+  })
+  .catch(err => alert('Error: ' + err));
+}
+
+function deleteWhitelist(entryId) {
+  if (!confirm('Remove this domain from whitelist?')) return;
+
+  fetch(`/api/spam/whitelist/${entryId}`, {method: 'DELETE'})
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      document.getElementById('wl-' + entryId).remove();
+    })
+    .catch(err => alert('Error: ' + err));
+}
+
+function addBlacklistDomain() {
+  const domain = document.getElementById('blacklist-domain').value.trim();
+  const reason = document.getElementById('blacklist-reason').value.trim();
+  if (!domain) { alert('Please enter a domain.'); return; }
+
+  fetch(`/api/spam/blacklist/${credentialId}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({domain: domain, reason: reason})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) { alert('Error: ' + data.error); return; }
+    location.reload();
+  })
+  .catch(err => alert('Error: ' + err));
+}
+
+function deleteBlacklist(entryId) {
+  if (!confirm('Remove this domain from blacklist?')) return;
+
+  fetch(`/api/spam/blacklist/${entryId}`, {method: 'DELETE'})
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      document.getElementById('bl-' + entryId).remove();
+    })
+    .catch(err => alert('Error: ' + err));
+}
+
+function importDefaults() {
+  if (!confirm('Import default trusted domains (Google, Apple, Amazon, PayPal, etc.)?')) return;
+
+  fetch(`/api/spam/whitelist/import-defaults/${credentialId}`, {method: 'POST'})
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      alert(`${data.added} domains imported.`);
+      location.reload();
+    })
+    .catch(err => alert('Error: ' + err));
+}
+</script>
+{% endblock %}
