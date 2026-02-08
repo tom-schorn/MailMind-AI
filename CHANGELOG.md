@@ -77,6 +77,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.3-pre] - 2026-02-08
+
+### Changed
+- revert config.json.example changes (configured via UI)
+- pin dependency versions in requirements.txt
+- add MIT license file
+
+### Fixed
+- implement IMAP IDLE hybrid architecture with proactive reconnect
+- log warning when config file is corrupt instead of silently using defaults
+- use stdlib urllib for Docker healthcheck instead of requests
+- correct imap_test_connection import path
+- replace bare except clauses with specific error handling
+
+
 ## [1.5.2-pre] - 2026-02-05
 
 ### Fixed
