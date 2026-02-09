@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-02-09
+
+### Breaking Changes
+- **Multi-LLM Support**: Replaced hardcoded Claude API with configurable LLM providers (Claude, Gemini, OpenAI, Ollama)
+- **AccountHandler Architecture**: Each email account now runs with dedicated handler instance for better isolation
+- **Rule Hash Tracking**: Email processing now tracks rule configuration changes via SHA256 hash instead of simple UID list
+- **Removed Auto-Spam Rules**: Auto-generated `[Auto-Spam]` rules have been removed. Users must create their own rules using `spam_score` and `spam_category` conditions
+- **Database Migration**: Automatic migration from v1.5.0 to v2.0.0 on startup (adds new tables, columns, indexes)
+
+### Added
+- **LLM Abstraction Layer**: `llm/` module with support for 4 providers:
+  - Claude (Anthropic) - Recommended for best accuracy
+  - Gemini (Google) - Alternative with good performance
+  - OpenAI (ChatGPT) - Popular general-purpose AI
+  - Ollama (Self-hosted) - Privacy-focused, no API key needed
+- **Per-Account LLM Configuration**: Configure different LLM providers per account via `/accounts/<id>/llm`
+- **AccountHandler Class**: New dedicated handler per account with:
+  - In-memory processed UID cache (O(1) lookup)
+  - Automatic rule hash calculation
+  - LLM configuration loading
+  - Reload signal polling
+  - Persistent vs session-only tracking modes
+- **Handler Configuration UI**: Configure tracking behavior via `/accounts/<id>/handler`
+- **Negation Operators**: Added 6 new rule operators:
+  - `contains_not` - Does NOT contain
+  - `equals_not` - Is NOT equal to
+  - `starts_with_not` - Does NOT start with
+  - `ends_with_not` - Does NOT end with
+  - `greater_than_not` - NOT greater than (≤)
+  - `less_than_not` - NOT less than (≥)
+- **Database Schema Changes**:
+  - New table `llmconfig` - Per-account LLM provider configuration
+  - New table `accounthandlerconfig` - Per-account handler settings
+  - New column `emailruleapplication.rule_config_hash` - Tracks rule configuration changes
+  - New index `idx_emailruleapplication_hash` - Optimizes processed email lookups
+
+### Changed
+- **Email Processing Flow**: Regular rules evaluated first, spam analysis only if no match (v1.11 bugfix preserved)
+- **Spam Analysis**: Now uses account-specific LLM provider instead of global ANTHROPIC_API_KEY
+- **Performance**: Processed email checks now use in-memory cache (O(1)) instead of DB query (O(log n))
+- **Rule Changes**: Any rule modification triggers reprocessing with new rule hash (invalidates cache)
+- **Dependencies**: Added `google-generativeai==0.8.3`, `openai==1.59.9`, `requests==2.32.3`
+
+### Removed
+- **Auto-Spam Rule Generation**: `_create_spam_auto_rules()` and `_delete_spam_auto_rules()` functions removed
+- **Quick Action Panel**: Removed from account dashboard (UI simplification)
+- **Global ANTHROPIC_API_KEY**: No longer used, replaced by per-account LLM configs
+
+### Fixed
+- All v1.11 bugfixes preserved (spam processing order, error persistence, subfolder handling, etc.)
+
+### Migration Notes
+- Database automatically migrates from v1.5.0 to v2.0.0 on startup
+- All existing `[Auto-Spam]` rules are deleted during migration
+- Users must configure LLM provider per account before spam detection works
+- Existing `emailruleapplication` records are updated with current rule hash
+- No manual intervention required for migration
+
+### Security
+- LLM API keys stored in database (plaintext) - Use Ollama for full privacy
+- Future versions may add encryption for API keys
+
 ## [1.0.0-pre] - 2026-02-04
 
 ### Added

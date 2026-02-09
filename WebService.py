@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, DatabaseService
 from DatabaseService import DryRunRequest, DryRunResult, ServiceStatus, Label, ProcessedEmail, EmailRuleApplication, WatcherReloadSignal
-from DatabaseService import SpamConfig, SpamAnalysis, WhitelistEntry, BlacklistEntry
+from DatabaseService import SpamConfig, SpamAnalysis, WhitelistEntry, BlacklistEntry, LLMConfig, AccountHandlerConfig
 import os
 import re
 import json
@@ -96,89 +96,7 @@ def _signal_watcher_reload(session, credential_id: int) -> None:
     session.commit()
 
 
-def _delete_spam_auto_rules(session, credential_id: int) -> None:
-    """Delete all auto-generated spam rules for a credential."""
-    auto_rules = session.query(EmailRule).filter(
-        EmailRule.email_credential_id == credential_id,
-        EmailRule.name.like('[Auto-Spam]%')
-    ).all()
-    for rule in auto_rules:
-        session.delete(rule)
-    session.flush()
-
-
-def _create_spam_auto_rules(session, credential_id: int, spam_config) -> None:
-    """Create auto-generated spam rules based on spam config settings."""
-    spam_folder = spam_config.spam_folder or 'Spam'
-
-    if spam_config.auto_categorize:
-        categories = [
-            ('Phishing', 'phishing'),
-            ('Scam', 'scam'),
-            ('Spam', 'spam'),
-            ('Malware', 'malware'),
-            ('Adult', 'adult'),
-        ]
-        subfolder_map = {
-            'Phishing': 'Phishing',
-            'Scam': 'Scam',
-            'Spam': 'General',
-            'Malware': 'Malware',
-            'Adult': 'Adult',
-        }
-        for label, category in categories:
-            rule = EmailRule(
-                email_credential_id=credential_id,
-                name=f"[Auto-Spam] {label}",
-                enabled=True,
-                condition="AND",
-                actions="",
-                monitored_folder="INBOX"
-            )
-            session.add(rule)
-            session.flush()
-
-            session.add(RuleCondition(
-                rule_id=rule.id,
-                field="spam_category",
-                operator="equals",
-                value=category
-            ))
-
-            target_folder = f"{spam_folder}/{subfolder_map[label]}"
-            session.add(RuleAction(
-                rule_id=rule.id,
-                action_type="move_to_folder",
-                action_value=target_folder,
-                folder=target_folder
-            ))
-    else:
-        rule = EmailRule(
-            email_credential_id=credential_id,
-            name="[Auto-Spam] Filter",
-            enabled=True,
-            condition="AND",
-            actions="",
-            monitored_folder="INBOX"
-        )
-        session.add(rule)
-        session.flush()
-
-        session.add(RuleCondition(
-            rule_id=rule.id,
-            field="spam_score",
-            operator="greater_than",
-            value="0.5"
-        ))
-
-        session.add(RuleAction(
-            rule_id=rule.id,
-            action_type="move_to_folder",
-            action_value=spam_folder,
-            folder=spam_folder
-        ))
-
-    session.flush()
+# v2.0.0: Auto-Spam rules removed - users create their own rules using spam_score/spam_category conditions
 
 
 def _format_actions(actions_json: str) -> str:
@@ -849,15 +767,11 @@ def account_spam_settings(id):
 
             spam_config.enabled = 'enabled' in request.form
             spam_config.sensitivity = int(request.form.get('sensitivity', 5))
-            spam_config.model = request.form.get('model', 'haiku')
             spam_config.spam_folder = request.form.get('spam_folder', 'Spam')
             spam_config.auto_categorize = 'auto_categorize' in request.form
 
-            session.commit()
-
-            _delete_spam_auto_rules(session, id)
-            if spam_config.enabled:
-                _create_spam_auto_rules(session, id, spam_config)
+            # v2.0.0: model is now in LLMConfig, not SpamConfig
+            # Keep for backward compatibility, but it's ignored
             session.commit()
             _signal_watcher_reload(session, id)
 
@@ -868,20 +782,16 @@ def account_spam_settings(id):
         whitelist = session.query(WhitelistEntry).filter_by(credential_id=id).order_by(WhitelistEntry.added_at.desc()).all()
         blacklist = session.query(BlacklistEntry).filter_by(credential_id=id).order_by(BlacklistEntry.added_at.desc()).all()
 
-        auto_rules = session.query(EmailRule).filter(
-            EmailRule.email_credential_id == id,
-            EmailRule.name.like('[Auto-Spam]%')
-        ).all()
-
-        api_key_configured = bool(os.environ.get('ANTHROPIC_API_KEY'))
+        # v2.0.0: Check LLM config instead of ANTHROPIC_API_KEY
+        llm_config = session.query(LLMConfig).filter_by(credential_id=id).first()
+        llm_configured = llm_config is not None
 
         return render_template('accounts/spam/settings.html',
                              account=account,
                              spam_config=spam_config,
                              whitelist=whitelist,
                              blacklist=blacklist,
-                             auto_rules=auto_rules,
-                             api_key_configured=api_key_configured)
+                             llm_configured=llm_configured)
     except Exception as e:
         session.rollback()
         flash(f'Error saving spam settings: {str(e)}', 'danger')
@@ -1673,6 +1583,107 @@ def export_logs_jsonl():
         headers={'Content-Disposition': 'attachment; filename=mailmind-logs.jsonl'}
     )
     return response
+
+
+@app.route('/accounts/<int:id>/llm', methods=['GET', 'POST'])
+def account_llm_config(id):
+    """LLM configuration for account."""
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        if request.method == 'POST':
+            provider = request.form.get('provider')
+            api_key = request.form.get('api_key')
+            model = request.form.get('model')
+            endpoint = request.form.get('endpoint', '')
+
+            # Validation
+            if provider not in ['claude', 'gemini', 'openai', 'ollama']:
+                flash('Invalid provider', 'danger')
+                return redirect(url_for('account_llm_config', id=id))
+
+            if provider != 'ollama' and not api_key:
+                flash('API Key required for cloud providers', 'danger')
+                return redirect(url_for('account_llm_config', id=id))
+
+            # Load or create config
+            llm_config = session.query(LLMConfig).filter_by(credential_id=id).first()
+            if llm_config:
+                llm_config.provider = provider
+                llm_config.api_key = api_key
+                llm_config.model = model
+                llm_config.endpoint = endpoint
+                llm_config.changed_at = datetime.now()
+            else:
+                llm_config = LLMConfig(
+                    credential_id=id,
+                    provider=provider,
+                    api_key=api_key,
+                    model=model,
+                    endpoint=endpoint
+                )
+                session.add(llm_config)
+
+            session.commit()
+            _signal_watcher_reload(session, id)
+
+            flash('LLM configuration saved', 'success')
+            return redirect(url_for('account_dashboard', id=id))
+
+        llm_config = session.query(LLMConfig).filter_by(credential_id=id).first()
+        return render_template('accounts/llm_config.html', account=account, llm_config=llm_config)
+
+    except Exception as e:
+        session.rollback()
+        flash(f'Error: {e}', 'danger')
+        return redirect(url_for('account_dashboard', id=id))
+    finally:
+        session.close()
+
+
+@app.route('/accounts/<int:id>/handler', methods=['GET', 'POST'])
+def account_handler_config(id):
+    """Handler configuration for account."""
+    session = db_service.get_session()
+    try:
+        account = session.query(EmailCredential).filter_by(id=id).first()
+        if not account:
+            flash('Account not found!', 'danger')
+            return redirect(url_for('list_accounts'))
+
+        if request.method == 'POST':
+            persistent = 'persistent_tracking' in request.form
+
+            handler_config = session.query(AccountHandlerConfig).filter_by(credential_id=id).first()
+            if handler_config:
+                handler_config.persistent_processed_tracking = persistent
+                handler_config.changed_at = datetime.now()
+            else:
+                handler_config = AccountHandlerConfig(
+                    credential_id=id,
+                    persistent_processed_tracking=persistent
+                )
+                session.add(handler_config)
+
+            session.commit()
+            _signal_watcher_reload(session, id)
+
+            flash('Handler configuration saved', 'success')
+            return redirect(url_for('account_dashboard', id=id))
+
+        handler_config = session.query(AccountHandlerConfig).filter_by(credential_id=id).first()
+        return render_template('accounts/handler_config.html', account=account, handler_config=handler_config)
+
+    except Exception as e:
+        session.rollback()
+        flash(f'Error: {e}', 'danger')
+        return redirect(url_for('account_dashboard', id=id))
+    finally:
+        session.close()
 
 
 if __name__ == '__main__':

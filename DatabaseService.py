@@ -214,13 +214,36 @@ class DatabaseVersion(Base):
     description: Mapped[str] = mapped_column(String(255), nullable=True)
 
 
+class LLMConfig(Base):
+    __tablename__ = "llmconfig"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    credential_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailcredential.id'), unique=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    api_key: Mapped[str] = mapped_column(String(255), nullable=True)
+    model: Mapped[str] = mapped_column(String(50), nullable=False)
+    endpoint: Mapped[str] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
+    changed_at: Mapped[DateTime] = mapped_column(DateTime, nullable=True, onupdate=func.current_timestamp())
+
+
+class AccountHandlerConfig(Base):
+    __tablename__ = "accounthandlerconfig"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    credential_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailcredential.id'), unique=True, nullable=False)
+    persistent_processed_tracking: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
+    changed_at: Mapped[DateTime] = mapped_column(DateTime, nullable=True, onupdate=func.current_timestamp())
+
+
 class DatabaseMigrator:
     """Handles automatic database migrations."""
 
     def __init__(self, session: Session, logger: logging.Logger):
         self.session = session
         self.logger = logger
-        self.current_version = "1.5.0"
+        self.current_version = "2.0.0"
 
     def get_db_version(self) -> str:
         """Get current database version."""
@@ -275,6 +298,10 @@ class DatabaseMigrator:
         if db_version == "1.4.0":
             self._migrate_1_4_0_to_1_5_0()
             db_version = "1.5.0"
+
+        if db_version == "1.5.0":
+            self._migrate_1_5_0_to_2_0_0()
+            db_version = "2.0.0"
 
         self.logger.info(f"Migration completed to {self.current_version}")
 
@@ -495,6 +522,140 @@ class DatabaseMigrator:
             self.session.commit()
 
             self.logger.info("Migration 1.4.0 -> 1.5.0 completed successfully")
+
+        except Exception as e:
+            self.session.rollback()
+            self.logger.error(f"Migration failed: {e}")
+            raise
+
+    def _migrate_1_5_0_to_2_0_0(self) -> None:
+        """Migrate from v1.5.0 to v2.0.0 (add LLMConfig, AccountHandlerConfig, rule_config_hash)."""
+        self.logger.info("Running migration 1.5.0 -> 2.0.0")
+
+        try:
+            # Create llmconfig table
+            self.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS llmconfig (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    credential_id INTEGER NOT NULL UNIQUE,
+                    provider VARCHAR(20) NOT NULL,
+                    api_key VARCHAR(255),
+                    model VARCHAR(50) NOT NULL,
+                    endpoint VARCHAR(255),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    changed_at TIMESTAMP,
+                    FOREIGN KEY (credential_id) REFERENCES emailcredential (id) ON DELETE CASCADE
+                )
+            """))
+            self.logger.info("Created llmconfig table")
+
+            # Create accounthandlerconfig table
+            self.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS accounthandlerconfig (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    credential_id INTEGER NOT NULL UNIQUE,
+                    persistent_processed_tracking BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    changed_at TIMESTAMP,
+                    FOREIGN KEY (credential_id) REFERENCES emailcredential (id) ON DELETE CASCADE
+                )
+            """))
+            self.logger.info("Created accounthandlerconfig table")
+
+            # Add rule_config_hash column to emailruleapplication
+            result = self.session.execute(
+                text("PRAGMA table_info(emailruleapplication)")
+            ).fetchall()
+            columns = [row[1] for row in result]
+
+            if 'rule_config_hash' not in columns:
+                self.session.execute(text("""
+                    ALTER TABLE emailruleapplication ADD COLUMN rule_config_hash VARCHAR(64)
+                """))
+                self.logger.info("Added rule_config_hash column to emailruleapplication")
+
+            # Create index on (credential_id, rule_config_hash, email_uid)
+            self.session.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_emailruleapplication_hash
+                ON emailruleapplication(email_credential_id, rule_config_hash, email_uid)
+            """))
+            self.logger.info("Created index idx_emailruleapplication_hash")
+
+            # Calculate rule hash for all accounts and update existing records
+            from hashlib import sha256
+            import json
+
+            # Get all credentials
+            credentials = self.session.execute(
+                text("SELECT id FROM emailcredential")
+            ).fetchall()
+
+            for (credential_id,) in credentials:
+                # Get all rules for this account
+                rules = self.session.execute(text("""
+                    SELECT r.id, r.name, r.enabled, r.condition, r.monitored_folder,
+                           GROUP_CONCAT(DISTINCT rc.field || ':' || rc.operator || ':' || rc.value) as conditions,
+                           GROUP_CONCAT(DISTINCT ra.action_type || ':' || ra.action_value) as actions
+                    FROM emailrule r
+                    LEFT JOIN rulecondition rc ON r.id = rc.rule_id
+                    LEFT JOIN ruleaction ra ON r.id = ra.rule_id
+                    WHERE r.email_credential_id = :cred_id
+                    GROUP BY r.id
+                    ORDER BY r.id
+                """), {"cred_id": credential_id}).fetchall()
+
+                rule_data = []
+                for rule in rules:
+                    rule_dict = {
+                        "id": rule[0],
+                        "name": rule[1],
+                        "enabled": rule[2],
+                        "condition": rule[3],
+                        "monitored_folder": rule[4],
+                        "conditions": rule[5] if rule[5] else "",
+                        "actions": rule[6] if rule[6] else ""
+                    }
+                    rule_data.append(rule_dict)
+
+                json_str = json.dumps(rule_data, sort_keys=True)
+                rule_hash = sha256(json_str.encode()).hexdigest()
+
+                # Update all existing EmailRuleApplication records for this account
+                self.session.execute(text("""
+                    UPDATE emailruleapplication
+                    SET rule_config_hash = :hash
+                    WHERE email_credential_id = :cred_id AND rule_config_hash IS NULL
+                """), {"hash": rule_hash, "cred_id": credential_id})
+
+                self.logger.info(f"Updated rule hash for account {credential_id}: {rule_hash[:8]}...")
+
+            # Delete all [Auto-Spam] rules
+            self.session.execute(text("""
+                DELETE FROM ruleaction WHERE rule_id IN (
+                    SELECT id FROM emailrule WHERE name LIKE '[Auto-Spam]%'
+                )
+            """))
+
+            self.session.execute(text("""
+                DELETE FROM rulecondition WHERE rule_id IN (
+                    SELECT id FROM emailrule WHERE name LIKE '[Auto-Spam]%'
+                )
+            """))
+
+            deleted_count = self.session.execute(text("""
+                DELETE FROM emailrule WHERE name LIKE '[Auto-Spam]%'
+            """)).rowcount
+
+            self.logger.info(f"Deleted {deleted_count} [Auto-Spam] rules")
+
+            version_record = DatabaseVersion(
+                version="2.0.0",
+                description="Add LLMConfig, AccountHandlerConfig, rule_config_hash, remove Auto-Spam rules"
+            )
+            self.session.add(version_record)
+            self.session.commit()
+
+            self.logger.info("Migration 1.5.0 -> 2.0.0 completed successfully")
 
         except Exception as e:
             self.session.rollback()

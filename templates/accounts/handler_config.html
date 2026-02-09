@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="pagetitle">
+  <h1>Handler Configuration - {{ account.email_address }}</h1>
+  <nav>
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{{ url_for('list_accounts') }}">Accounts</a></li>
+      <li class="breadcrumb-item"><a href="{{ url_for('account_dashboard', id=account.id) }}">{{ account.email_address }}</a></li>
+      <li class="breadcrumb-item active">Handler Configuration</li>
+    </ol>
+  </nav>
+</div>
+
+<section class="section">
+  <div class="row">
+    <!-- Main Content -->
+    <div class="col-lg-8">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Email Processing Settings</h5>
+
+          <form method="POST">
+            <div class="mb-3">
+              <div class="form-check form-switch">
+                <input type="checkbox" name="persistent_tracking" id="persistent_tracking" class="form-check-input"
+                       {% if not handler_config or handler_config.persistent_processed_tracking %}checked{% endif %}>
+                <label for="persistent_tracking" class="form-check-label">
+                  <strong>Persistent Processed Tracking</strong>
+                </label>
+              </div>
+              <div class="form-text mt-2">
+                <strong>Enabled (Default):</strong> Processed emails are saved to database and persist across restarts. Rule changes trigger reprocessing.<br>
+                <strong>Disabled:</strong> Only in-memory cache (session-only). All emails are reprocessed after restart.
+              </div>
+            </div>
+
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-circle"></i> Save Configuration
+              </button>
+              <a href="{{ url_for('account_dashboard', id=account.id) }}" class="btn btn-secondary">
+                <i class="bi bi-x-circle"></i> Cancel
+              </a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Help Sidebar -->
+    <div class="col-lg-4">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">
+            <i class="bi bi-question-circle"></i> Help & Information
+          </h5>
+
+          <h6>Handler Settings</h6>
+          <p>Configure how the email handler processes and tracks emails.</p>
+
+          <h6 class="mt-3">Persistent Tracking:</h6>
+          <ul>
+            <li><strong>Enabled (Default):</strong>
+              <ul class="small">
+                <li>Processed emails saved to database</li>
+                <li>Emails not reprocessed after restart</li>
+                <li>Rule changes trigger full reprocessing</li>
+              </ul>
+            </li>
+            <li><strong>Disabled:</strong>
+              <ul class="small">
+                <li>Only in-memory cache (session-only)</li>
+                <li>All emails reprocessed after restart</li>
+                <li>Useful for testing or re-running rules</li>
+              </ul>
+            </li>
+          </ul>
+
+          <h6 class="mt-3">When to use Session-Only:</h6>
+          <ul class="small">
+            <li>Testing new rules on existing emails</li>
+            <li>Reprocessing after fixing rule mistakes</li>
+            <li>Temporary email folders</li>
+          </ul>
+
+          <div class="alert alert-info small mt-3">
+            <i class="bi bi-info-circle"></i>
+            <strong>Note:</strong> Rule changes always trigger reprocessing, regardless of this setting (new rule hash).
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

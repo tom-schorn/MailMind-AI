@@ -20,6 +20,7 @@ from config_manager import load_config
 from LoggingService import LoggingService
 from utils import get_database_url
 from DatabaseService import EmailCredential, EmailRule, RuleCondition, RuleAction, ProcessedEmail, EmailRuleApplication, WatcherReloadSignal, SpamConfig, SpamAnalysis, WhitelistEntry, BlacklistEntry
+from AccountHandler import AccountHandler
 
 
 @dataclass
@@ -624,8 +625,14 @@ class ConditionEvaluator:
         if operator == 'contains':
             return compare_value.lower() in field_value.lower()
 
+        elif operator == 'contains_not':
+            return compare_value.lower() not in field_value.lower()
+
         elif operator == 'equals':
             return field_value.lower() == compare_value.lower()
+
+        elif operator == 'equals_not':
+            return field_value.lower() != compare_value.lower()
 
         elif operator == 'not_equals':
             return field_value.lower() != compare_value.lower()
@@ -633,8 +640,14 @@ class ConditionEvaluator:
         elif operator == 'starts_with':
             return field_value.lower().startswith(compare_value.lower())
 
+        elif operator == 'starts_with_not':
+            return not field_value.lower().startswith(compare_value.lower())
+
         elif operator == 'ends_with':
             return field_value.lower().endswith(compare_value.lower())
+
+        elif operator == 'ends_with_not':
+            return not field_value.lower().endswith(compare_value.lower())
 
         elif operator == 'greater_than':
             try:
@@ -644,11 +657,27 @@ class ConditionEvaluator:
             except ValueError:
                 return False
 
+        elif operator == 'greater_than_not':
+            try:
+                if field == 'attachment_size':
+                    return float(field_value) <= self._parse_size_value(compare_value)
+                return float(field_value) <= float(compare_value)
+            except ValueError:
+                return False
+
         elif operator == 'less_than':
             try:
                 if field == 'attachment_size':
                     return float(field_value) < self._parse_size_value(compare_value)
                 return float(field_value) < float(compare_value)
+            except ValueError:
+                return False
+
+        elif operator == 'less_than_not':
+            try:
+                if field == 'attachment_size':
+                    return float(field_value) >= self._parse_size_value(compare_value)
+                return float(field_value) >= float(compare_value)
             except ValueError:
                 return False
 
@@ -898,7 +927,7 @@ class ProcessingResult:
 class EmailProcessor:
     """Orchestrates email processing workflow."""
 
-    def __init__(self, session: Session, rule_engine: RuleEngine, logger: logging.Logger):
+    def __init__(self, session: Session, rule_engine: RuleEngine, logger: logging.Logger, account_handler=None):
         """
         Initialize email processor.
 
@@ -906,10 +935,12 @@ class EmailProcessor:
             session: SQLAlchemy database session
             rule_engine: RuleEngine instance
             logger: Logger instance
+            account_handler: Optional AccountHandler instance (for cache access)
         """
         self.session = session
         self.rule_engine = rule_engine
         self.logger = logger
+        self.account_handler = account_handler
 
     def process_email(self, email: EmailMessage, credential_id: int, account_email: str = None,
                       skip_prefix: str = None, only_prefix: str = None) -> ProcessingResult:
@@ -978,6 +1009,11 @@ class EmailProcessor:
 
     def _is_already_processed(self, email_uid: str, credential_id: int, rule_id: int) -> bool:
         """Check if email has already been processed by a specific rule."""
+        # v2.0.0: Use AccountHandler cache if available (O(1) lookup)
+        if self.account_handler:
+            return self.account_handler.is_processed(email_uid)
+
+        # Fallback: DB query (for tests / dry-run)
         existing = self.session.query(EmailRuleApplication).filter_by(
             email_uid=email_uid,
             email_credential_id=credential_id,
@@ -1007,6 +1043,12 @@ class EmailProcessor:
 
     def _mark_as_processed(self, email_uid: str, credential_id: int, rule_id: int, actions_taken: str, email_subject: str = None) -> None:
         """Mark email as processed by a specific rule."""
+        # v2.0.0: Use AccountHandler cache if available
+        if self.account_handler:
+            self.account_handler.mark_processed(email_uid, rule_id, actions_taken, email_subject or "")
+            return
+
+        # Fallback: Direct DB insert (for tests / dry-run)
         try:
             application = EmailRuleApplication(
                 email_uid=email_uid,
@@ -1234,6 +1276,7 @@ class EMailService:
         )
 
         self.imap_clients: Dict[str, IMAPClient] = {}
+        self.account_handlers: Dict[int, AccountHandler] = {}  # v2.0.0: Account handlers by credential_id
         self.stop_event = threading.Event()
         self.threads = []
 
@@ -1308,6 +1351,24 @@ class EMailService:
             self.logger.info(f"Starting email watchers for {len(credentials)} accounts")
 
             for credential in credentials:
+                # v2.0.0: Create and start AccountHandler
+                handler = AccountHandler(
+                    credential,
+                    self.session_factory,
+                    self.config,
+                    self.logger
+                )
+                self.account_handlers[credential.id] = handler
+
+                handler_thread = threading.Thread(
+                    target=handler.run,
+                    daemon=True,
+                    name=f"AccountHandler-{credential.id}"
+                )
+                handler_thread.start()
+                self.threads.append(handler_thread)
+
+                # Existing watcher thread (for folder monitoring)
                 watcher_thread = threading.Thread(
                     target=self._email_watcher_loop,
                     args=(credential,),
@@ -1564,20 +1625,26 @@ class EMailService:
 
             email = imap_client.fetch_email(uid)
 
-            rule_engine = RuleEngine(imap_client, self.logger)
-            email_processor = EmailProcessor(session, rule_engine, self.logger)
+            # v2.0.0: Get AccountHandler for cache access
+            handler = self.account_handlers.get(credential_id)
 
-            # 1. Evaluate regular rules first (skip Auto-Spam rules)
-            regular_result = email_processor.process_email(
-                email, credential_id, account_email=account_email, skip_prefix="[Auto-Spam]"
+            rule_engine = RuleEngine(imap_client, self.logger)
+            email_processor = EmailProcessor(session, rule_engine, self.logger, account_handler=handler)
+
+            # Check if already processed (cache hit)
+            if handler and handler.is_processed(uid):
+                self.logger.debug(f"Email {uid} already processed (cache hit)")
+                return
+
+            # 1. Evaluate ALL rules (no Auto-Spam rules anymore)
+            result = email_processor.process_email(
+                email, credential_id, account_email=account_email
             )
 
-            # 2. Only run spam analysis + auto-rules if no regular rule matched
-            spam_result = None
-            api_key = os.environ.get('ANTHROPIC_API_KEY')
+            # 2. Only run spam analysis if no rule matched
             spam_config = session.query(SpamConfig).filter_by(credential_id=credential_id).first()
 
-            if not regular_result.rules_matched and spam_config and spam_config.enabled and api_key:
+            if not result.rules_matched and spam_config and spam_config.enabled and handler and handler.llm_config:
                 cached = session.query(SpamAnalysis).filter_by(
                     credential_id=credential_id, email_uid=uid
                 ).first()
@@ -1588,8 +1655,10 @@ class EMailService:
                     self.logger.debug(f"Using cached spam analysis for {uid}: score={cached.spam_score}, category={cached.spam_category}")
                 else:
                     try:
-                        from SpamService import SpamAnalyzer
-                        analyzer = SpamAnalyzer(api_key, spam_config.model, spam_config.sensitivity, self.logger)
+                        # v2.0.0: Use multi-LLM SpamAnalyzer
+                        from spam_analyzer import SpamAnalyzer
+                        analyzer = SpamAnalyzer(handler.llm_config, spam_config.sensitivity, self.logger)
+
                         whitelist = [w.domain for w in session.query(WhitelistEntry).filter_by(credential_id=credential_id).all()]
                         blacklist = [b.domain for b in session.query(BlacklistEntry).filter_by(credential_id=credential_id).all()]
 
@@ -1610,6 +1679,12 @@ class EMailService:
                         session.commit()
 
                         self.logger.info(f"Spam analysis for {uid}: score={spam_analysis_result.score}, category={spam_analysis_result.category.value}")
+
+                        # Re-evaluate rules now that spam_score/spam_category are set
+                        email.spam_score = spam_analysis_result.score
+                        email.spam_category = spam_analysis_result.category.value
+                        result = email_processor.process_email(email, credential_id, account_email=account_email)
+
                     except Exception as e:
                         self.logger.error(f"Spam analysis failed for {uid}: {e}")
                         # Store error in SpamAnalysis so it shows in per-account spam log
@@ -1626,16 +1701,11 @@ class EMailService:
                         session.add(error_analysis)
                         session.commit()
 
-                # Evaluate Auto-Spam rules only
-                spam_result = email_processor.process_email(
-                    email, credential_id, account_email=account_email, only_prefix="[Auto-Spam]"
-                )
-
             self.service_manager.increment_emails_processed()
             self.service_manager.increment_rules_executed()
 
-            total_matched = len(regular_result.rules_matched) + (len(spam_result.rules_matched) if spam_result else 0)
-            total_actions = len(regular_result.actions_taken) + (len(spam_result.actions_taken) if spam_result else 0)
+            total_matched = len(result.rules_matched)
+            total_actions = len(result.actions_taken)
 
             self.logger.info(
                 f"Email {uid} from {folder} processed: {total_matched} rules matched, "
