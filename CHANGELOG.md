@@ -165,6 +165,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1-pre] - 2026-02-09
+
+### Fixed
+- read version from file instead of import
+
+
 ## [2.3.0-pre] - 2026-02-09
 
 ### Added
