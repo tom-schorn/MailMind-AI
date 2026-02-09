@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.4-pre] - 2026-02-09
+
+### Added
+- **Domain Spoofing Detection**: New anti-phishing feature in spam analysis pipeline (Claude only)
+  - Validates sender email domain against expected domain extracted from display name
+  - Highest weight (25%) in spam scoring to prioritize domain authenticity
+  - Detects impersonation attempts (e.g., "Lotto24 GmbH" from @gmail.com → Phishing)
+  - Significantly reduces false positives for legitimate companies (Pearl, ING, McDonald's, Lotto24)
+  - Uses LLM to determine expected domains contextually
+
+### Fixed
+- **IDLE Watch Performance**: Eliminated redundant UID fetching on watch startup
+  - Pass initial UIDs from folder watcher to watch() method
+  - Avoids re-fetching thousands of emails from Sent/Sent Messages folders
+  - Startup time reduced from minutes to seconds for accounts with many emails
+- **Dry-Run Performance**: Limited email fetch to 100 most recent emails (was unlimited)
+
 ## [2.1.3-pre] - 2026-02-09
 
 ### Fixed
