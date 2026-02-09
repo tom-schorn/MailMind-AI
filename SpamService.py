@@ -95,6 +95,11 @@ class ClaudeAnalyzer:
             )
 
             text = response.content[0].text.strip()
+            # Strip markdown code fences if present
+            if text.startswith("```"):
+                lines = text.split("\n")
+                lines = [l for l in lines if not l.strip().startswith("```")]
+                text = "\n".join(lines).strip()
             data = json.loads(text)
 
             score = max(0.0, min(1.0, float(data.get("score", 0.5))))
@@ -113,7 +118,7 @@ class ClaudeAnalyzer:
             )
 
         except json.JSONDecodeError as e:
-            self.logger.warning(f"Failed to parse Claude response: {e}")
+            self.logger.warning(f"Failed to parse Claude response: {e} | Raw: {text[:200]}")
             return AnalysisResult(score=0.5, category=SpamCategory.UNKNOWN, is_certain=False, reasoning="Parse error")
         except anthropic.APIError as e:
             self.logger.error(f"Claude API error: {e}")
