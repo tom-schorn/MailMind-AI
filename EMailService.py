@@ -440,7 +440,8 @@ class IMAPClient:
                     self.logger.info(f"Proactive reconnect after {connection_age:.0f}s")
                     self.reconnect()
                     self.mailbox.folder.set(folder)
-                    current_uids = set(self.get_all_uids(folder))
+                    # FIX: Only check recent UIDs, not ALL UIDs (prevents processing old emails)
+                    current_uids = set(self.get_all_uids(folder, limit=100))
                     new_uids = current_uids - last_uids
                     for uid in new_uids:
                         self.logger.info(f"New email detected during reconnect: {uid}")
@@ -455,7 +456,8 @@ class IMAPClient:
                 self.logger.debug(f"IDLE wait returned: {len(responses) if responses else 0} responses")
 
                 if responses:
-                    current_uids = set(self.get_all_uids(folder))
+                    # FIX: Only check recent UIDs, not ALL UIDs (prevents processing old emails)
+                    current_uids = set(self.get_all_uids(folder, limit=100))
                     new_uids = current_uids - last_uids
                     for uid in new_uids:
                         self.logger.info(f"New email detected: {uid}")
@@ -468,7 +470,7 @@ class IMAPClient:
                 try:
                     self.reconnect()
                     self.mailbox.folder.set(folder)
-                    current_uids = set(self.get_all_uids(folder))
+                    current_uids = set(self.get_all_uids(folder, limit=100))
                     new_uids = current_uids - last_uids
                     for uid in new_uids:
                         self.logger.info(f"New email detected after reconnect: {uid}")
@@ -507,7 +509,7 @@ class IMAPClient:
 
                 time.sleep(interval)
 
-                current_uids = set(self.get_all_uids(folder))
+                current_uids = set(self.get_all_uids(folder, limit=100))
                 new_uids = current_uids - last_uids
 
                 for uid in new_uids:
@@ -522,7 +524,7 @@ class IMAPClient:
                 try:
                     self.reconnect()
                     self.mailbox.folder.set(folder)
-                    current_uids = set(self.get_all_uids(folder))
+                    current_uids = set(self.get_all_uids(folder, limit=100))
                     new_uids = current_uids - last_uids
                     for uid in new_uids:
                         self.logger.info(f"New email detected after reconnect: {uid}")
