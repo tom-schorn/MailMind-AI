@@ -77,6 +77,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0-pre] - 2026-02-09
+
+### Added
+- add whitelist/blacklist URL import and error badge in spam log
+
+### Fixed
+- run spam analysis only when no regular rule matches
+- strip markdown code fences from Claude API responses
+
+
 ## [1.10.0-pre] - 2026-02-08
 
 ### Added
