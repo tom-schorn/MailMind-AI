@@ -1070,6 +1070,91 @@ def import_default_whitelist(credential_id):
         session.close()
 
 
+@app.route('/api/spam/whitelist/import-url/<int:credential_id>', methods=['POST'])
+def import_whitelist_from_url(credential_id):
+    """Import whitelist domains from a plaintext URL."""
+    session = db_service.get_session()
+    try:
+        data = request.get_json()
+        url = data.get('url', '').strip()
+        if not url:
+            return jsonify({'error': 'URL is required'}), 400
+
+        import urllib.request
+        req = urllib.request.Request(url, headers={'User-Agent': 'MailMind-AI/1.8.1'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            content = resp.read().decode('utf-8', errors='ignore')
+
+        added = 0
+        skipped = 0
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith('#') or line.startswith('//'):
+                continue
+            domain = line.lower()
+            # Basic domain validation
+            if not re.match(r'^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$', domain):
+                continue
+            existing = session.query(WhitelistEntry).filter_by(credential_id=credential_id, domain=domain).first()
+            if existing:
+                skipped += 1
+                continue
+            session.add(WhitelistEntry(credential_id=credential_id, domain=domain, reason=f'URL import: {url[:100]}'))
+            added += 1
+
+        session.commit()
+        return jsonify({'status': 'success', 'added': added, 'skipped': skipped})
+    except urllib.request.URLError as e:
+        return jsonify({'error': f'Failed to fetch URL: {e}'}), 400
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/api/spam/blacklist/import-url/<int:credential_id>', methods=['POST'])
+def import_blacklist_from_url(credential_id):
+    """Import blacklist domains from a plaintext URL."""
+    session = db_service.get_session()
+    try:
+        data = request.get_json()
+        url = data.get('url', '').strip()
+        if not url:
+            return jsonify({'error': 'URL is required'}), 400
+
+        import urllib.request
+        req = urllib.request.Request(url, headers={'User-Agent': 'MailMind-AI/1.8.1'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            content = resp.read().decode('utf-8', errors='ignore')
+
+        added = 0
+        skipped = 0
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith('#') or line.startswith('//'):
+                continue
+            domain = line.lower()
+            if not re.match(r'^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$', domain):
+                continue
+            existing = session.query(BlacklistEntry).filter_by(credential_id=credential_id, domain=domain).first()
+            if existing:
+                skipped += 1
+                continue
+            session.add(BlacklistEntry(credential_id=credential_id, domain=domain, reason=f'URL import: {url[:100]}'))
+            added += 1
+
+        session.commit()
+        return jsonify({'status': 'success', 'added': added, 'skipped': skipped})
+    except urllib.request.URLError as e:
+        return jsonify({'error': f'Failed to fetch URL: {e}'}), 400
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
 @app.route('/api/folders/<int:credential_id>')
 def get_folders(credential_id):
     """Get list of available IMAP folders for a credential."""
