@@ -787,7 +787,6 @@ def account_spam_settings(id):
             spam_config.enabled = 'enabled' in request.form
             spam_config.sensitivity = int(request.form.get('sensitivity', 5))
             spam_config.spam_folder = request.form.get('spam_folder', 'Spam')
-            spam_config.auto_categorize = 'auto_categorize' in request.form
 
             # v2.0.0: model is now in LLMConfig, not SpamConfig
             # Keep for backward compatibility, but it's ignored
