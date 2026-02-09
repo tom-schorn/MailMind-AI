@@ -34,25 +34,25 @@
             </div>
 
             <div class="row mb-3">
-              <label class="col-sm-3 col-form-label">API Key Status</label>
+              <label class="col-sm-3 col-form-label">LLM Provider</label>
               <div class="col-sm-9">
-                {% if api_key_configured %}
-                  <span class="badge bg-success">Connected</span>
-                  <small class="text-muted ms-2">ANTHROPIC_API_KEY is set in .env</small>
+                {% if llm_configured %}
+                  <span class="badge bg-success">Configured</span>
+                  <small class="text-muted ms-2">LLM provider is configured for this account</small>
+                  <div class="mt-2">
+                    <a href="{{ url_for('account_llm_config', id=account.id) }}" class="btn btn-sm btn-outline-primary">
+                      <i class="bi bi-cpu"></i> Change LLM Provider
+                    </a>
+                  </div>
                 {% else %}
                   <span class="badge bg-warning">Not Configured</span>
-                  <small class="text-muted ms-2">Set ANTHROPIC_API_KEY in your .env file</small>
+                  <small class="text-muted ms-2">Configure an LLM provider to enable spam detection</small>
+                  <div class="mt-2">
+                    <a href="{{ url_for('account_llm_config', id=account.id) }}" class="btn btn-sm btn-primary">
+                      <i class="bi bi-cpu"></i> Configure LLM Provider
+                    </a>
+                  </div>
                 {% endif %}
-              </div>
-            </div>
-
-            <div class="row mb-3">
-              <label for="model" class="col-sm-3 col-form-label">AI Model</label>
-              <div class="col-sm-9">
-                <select class="form-select" id="model" name="model">
-                  <option value="haiku" {% if not spam_config or spam_config.model == 'haiku' %}selected{% endif %}>Haiku (Recommended - Fast & Cheap)</option>
-                  <option value="sonnet" {% if spam_config and spam_config.model == 'sonnet' %}selected{% endif %}>Sonnet (More Accurate)</option>
-                </select>
               </div>
             </div>
 
@@ -95,17 +95,24 @@
             </div>
           </form>
 
-          {% if spam_config and spam_config.enabled and auto_rules %}
+          {% if spam_config and spam_config.enabled %}
           <div class="alert alert-info mt-3">
-            <h6><i class="bi bi-robot"></i> Active Auto-Rules</h6>
-            <ul class="mb-0">
-              {% for rule in auto_rules %}
-              <li>{{ rule.name }} <small class="text-muted">({{ rule.monitored_folder }})</small></li>
-              {% endfor %}
+            <h6><i class="bi bi-lightbulb"></i> Using Spam Detection</h6>
+            <p class="mb-2">After spam analysis, emails will have <code>spam_score</code> and <code>spam_category</code> fields available for rules.</p>
+            <p class="mb-2"><strong>Create your own rules to handle spam:</strong></p>
+            <ul class="mb-2">
+              <li>Example: <code>spam_score greater_than 0.7</code> → Move to Spam</li>
+              <li>Example: <code>spam_category equals phishing</code> → Delete</li>
+              <li>Example: <code>spam_category equals newsletter</code> → Move to Newsletters</li>
             </ul>
-            <small class="text-muted mt-1 d-block">
-              <i class="bi bi-lightbulb"></i> Learning: Emails moved out of {{ spam_config.spam_folder }} will auto-whitelist the sender domain.
-            </small>
+            <div class="mt-2">
+              <a href="{{ url_for('account_add_rule', id=account.id) }}" class="btn btn-sm btn-primary">
+                <i class="bi bi-plus-circle"></i> Create Spam Rule
+              </a>
+              <a href="{{ url_for('account_rules', id=account.id) }}" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-funnel"></i> View All Rules
+              </a>
+            </div>
           </div>
           {% endif %}
 

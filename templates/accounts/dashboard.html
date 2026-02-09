@@ -116,11 +116,23 @@
     </div>
   </div>
 
-  <!-- Quick Actions -->
+  <!-- Configuration & Quick Actions -->
   <div class="row">
     <div class="col-12">
       <div class="card">
         <div class="card-body">
+          <h5 class="card-title">Configuration & Settings</h5>
+          <div class="d-flex gap-2 flex-wrap mb-3">
+            <a href="{{ url_for('account_llm_config', id=account.id) }}" class="btn btn-outline-primary">
+              <i class="bi bi-cpu"></i> LLM Settings
+            </a>
+            <a href="{{ url_for('account_handler_config', id=account.id) }}" class="btn btn-outline-secondary">
+              <i class="bi bi-gear"></i> Handler Settings
+            </a>
+            <a href="{{ url_for('account_spam_settings', id=account.id) }}" class="btn btn-outline-success">
+              <i class="bi bi-shield-check"></i> Spam Settings
+            </a>
+          </div>
           <h5 class="card-title">Quick Actions</h5>
           <div class="d-flex gap-2 flex-wrap">
             <a href="{{ url_for('account_add_rule', id=account.id) }}" class="btn btn-primary">
