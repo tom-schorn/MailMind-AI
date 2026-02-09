@@ -165,6 +165,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0-pre] - 2026-02-09
+
+### Added
+- add domain spoofing detection and fix IDLE performance
+
+### Changed
+- bump version to 2.1.4-pre
+
+
 ## [2.1.3-pre] - 2026-02-09
 
 ### Changed
