@@ -66,6 +66,8 @@
                     <span class="badge bg-dark">{{ a.spam_category }}</span>
                   {% elif a.spam_category == 'adult' %}
                     <span class="badge bg-secondary">{{ a.spam_category }}</span>
+                  {% elif a.spam_category == 'error' %}
+                    <span class="badge bg-danger"><i class="bi bi-exclamation-triangle"></i> error</span>
                   {% else %}
                     <span class="badge bg-light text-dark">{{ a.spam_category or 'unknown' }}</span>
                   {% endif %}

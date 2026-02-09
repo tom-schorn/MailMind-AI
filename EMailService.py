@@ -911,7 +911,8 @@ class EmailProcessor:
         self.rule_engine = rule_engine
         self.logger = logger
 
-    def process_email(self, email: EmailMessage, credential_id: int, account_email: str = None) -> ProcessingResult:
+    def process_email(self, email: EmailMessage, credential_id: int, account_email: str = None,
+                      skip_prefix: str = None, only_prefix: str = None) -> ProcessingResult:
         """
         Process a single email through all applicable rules.
 
@@ -919,6 +920,8 @@ class EmailProcessor:
             email: EmailMessage to process
             credential_id: Email credential ID
             account_email: Email address of the account (for save_attachments path)
+            skip_prefix: Skip rules whose name starts with this prefix
+            only_prefix: Only process rules whose name starts with this prefix
 
         Returns:
             ProcessingResult with processing details
@@ -926,6 +929,12 @@ class EmailProcessor:
         self.logger.info(f"Processing email {email.uid} from {email.sender}")
 
         enabled_rules = self._load_enabled_rules(credential_id)
+
+        if skip_prefix:
+            enabled_rules = [r for r in enabled_rules if not r.name.startswith(skip_prefix)]
+        if only_prefix:
+            enabled_rules = [r for r in enabled_rules if r.name.startswith(only_prefix)]
+
         self.logger.debug(f"Found {len(enabled_rules)} enabled rules for credential {credential_id}")
 
         rules_matched = []
@@ -1355,12 +1364,12 @@ class EMailService:
                 folder_thread.start()
                 folder_threads.append(folder_thread)
 
-            # Spam Learning Monitor (if spam enabled)
+            # Spam Learning Monitor (only when auto_categorize is ON)
             spam_monitor_thread = None
             session = self.session_factory()
             try:
                 spam_config = session.query(SpamConfig).filter_by(credential_id=credential.id).first()
-                if spam_config and spam_config.enabled:
+                if spam_config and spam_config.enabled and spam_config.auto_categorize:
                     spam_monitor_thread = threading.Thread(
                         target=self._spam_learning_monitor,
                         args=(credential, spam_config, credential_stop),
@@ -1417,16 +1426,27 @@ class EMailService:
             self.logger.error(f"Spam learning monitor failed to connect: {e}")
             return
 
-        # Collect all spam folders
+        # Only watch main spam folder (subfolders are managed by auto-rules)
         spam_folders = [spam_config.spam_folder]
+
+        # Ensure spam subfolders exist (auto-rules will move emails there)
         if spam_config.auto_categorize:
             for subfolder in ["Phishing", "Scam", "General", "Malware", "Adult"]:
-                spam_folders.append(f"{spam_config.spam_folder}/{subfolder}")
+                subfolder_path = f"{spam_config.spam_folder}/{subfolder}"
+                try:
+                    if not imap.folder_exists(subfolder_path):
+                        imap.create_folder(subfolder_path)
+                        self.logger.info(f"Created spam subfolder: {subfolder_path}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to create spam subfolder {subfolder_path}: {e}")
 
         # Initial cache: {folder: {uid: sender}}
         uid_cache = {}
         for folder in spam_folders:
             try:
+                if not imap.folder_exists(folder):
+                    imap.create_folder(folder)
+                    self.logger.info(f"Created spam folder: {folder}")
                 uid_cache[folder] = imap.fetch_senders(folder)
             except Exception:
                 uid_cache[folder] = {}
@@ -1544,10 +1564,20 @@ class EMailService:
 
             email = imap_client.fetch_email(uid)
 
-            # Spam analysis enrichment (if enabled for this account)
+            rule_engine = RuleEngine(imap_client, self.logger)
+            email_processor = EmailProcessor(session, rule_engine, self.logger)
+
+            # 1. Evaluate regular rules first (skip Auto-Spam rules)
+            regular_result = email_processor.process_email(
+                email, credential_id, account_email=account_email, skip_prefix="[Auto-Spam]"
+            )
+
+            # 2. Only run spam analysis + auto-rules if no regular rule matched
+            spam_result = None
             api_key = os.environ.get('ANTHROPIC_API_KEY')
             spam_config = session.query(SpamConfig).filter_by(credential_id=credential_id).first()
-            if spam_config and spam_config.enabled and api_key:
+
+            if not regular_result.rules_matched and spam_config and spam_config.enabled and api_key:
                 cached = session.query(SpamAnalysis).filter_by(
                     credential_id=credential_id, email_uid=uid
                 ).first()
@@ -1563,38 +1593,53 @@ class EMailService:
                         whitelist = [w.domain for w in session.query(WhitelistEntry).filter_by(credential_id=credential_id).all()]
                         blacklist = [b.domain for b in session.query(BlacklistEntry).filter_by(credential_id=credential_id).all()]
 
-                        spam_result = analyzer.analyze_email(email, whitelist, blacklist)
-                        email.spam_score = spam_result.score
-                        email.spam_category = spam_result.category.value
+                        spam_analysis_result = analyzer.analyze_email(email, whitelist, blacklist)
+                        email.spam_score = spam_analysis_result.score
+                        email.spam_category = spam_analysis_result.category.value
 
-                        import json as _json
                         analysis = SpamAnalysis(
                             credential_id=credential_id,
                             email_uid=uid,
-                            spam_score=spam_result.score,
-                            spam_category=spam_result.category.value,
-                            analysis_json=_json.dumps(spam_result.step_results),
+                            spam_score=spam_analysis_result.score,
+                            spam_category=spam_analysis_result.category.value,
+                            analysis_json=json.dumps(spam_analysis_result.step_results),
                             email_subject=email.subject[:255] if email.subject else None,
                             email_from=email.sender[:255] if email.sender else None,
                         )
                         session.add(analysis)
                         session.commit()
 
-                        self.logger.info(f"Spam analysis for {uid}: score={spam_result.score}, category={spam_result.category.value}")
+                        self.logger.info(f"Spam analysis for {uid}: score={spam_analysis_result.score}, category={spam_analysis_result.category.value}")
                     except Exception as e:
                         self.logger.error(f"Spam analysis failed for {uid}: {e}")
+                        # Store error in SpamAnalysis so it shows in per-account spam log
+                        error_analysis = SpamAnalysis(
+                            credential_id=credential_id,
+                            email_uid=uid,
+                            spam_score=None,
+                            spam_category="error",
+                            analysis_json=json.dumps([{"step": "error", "score": 0, "category": "error",
+                                                       "is_certain": False, "reasoning": str(e)[:200]}]),
+                            email_subject=email.subject[:255] if email.subject else None,
+                            email_from=email.sender[:255] if email.sender else None,
+                        )
+                        session.add(error_analysis)
+                        session.commit()
 
-            rule_engine = RuleEngine(imap_client, self.logger)
-            email_processor = EmailProcessor(session, rule_engine, self.logger)
-
-            result = email_processor.process_email(email, credential_id, account_email=account_email)
+                # Evaluate Auto-Spam rules only
+                spam_result = email_processor.process_email(
+                    email, credential_id, account_email=account_email, only_prefix="[Auto-Spam]"
+                )
 
             self.service_manager.increment_emails_processed()
             self.service_manager.increment_rules_executed()
 
+            total_matched = len(regular_result.rules_matched) + (len(spam_result.rules_matched) if spam_result else 0)
+            total_actions = len(regular_result.actions_taken) + (len(spam_result.actions_taken) if spam_result else 0)
+
             self.logger.info(
-                f"Email {uid} from {folder} processed: {len(result.rules_matched)} rules matched, "
-                f"{len(result.actions_taken)} actions taken"
+                f"Email {uid} from {folder} processed: {total_matched} rules matched, "
+                f"{total_actions} actions taken"
             )
 
         except Exception as e:
