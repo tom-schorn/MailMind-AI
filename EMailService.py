@@ -932,9 +932,15 @@ class RuleEngine:
 class ProcessingResult:
     """Result of email processing."""
     email_uid: str
-    rules_matched: list[int]
+    rules_matched: list[int]  # Rule IDs
     actions_taken: list[str]
     errors: list[str]
+    total_rules_evaluated: int = 0
+    matched_rule_names: list[str] = None  # Rule names for logging
+
+    def __post_init__(self):
+        if self.matched_rule_names is None:
+            self.matched_rule_names = []
 
 
 class EmailProcessor:
@@ -970,8 +976,6 @@ class EmailProcessor:
         Returns:
             ProcessingResult with processing details
         """
-        self.logger.info(f"Processing email {email.uid} from {email.sender}")
-
         enabled_rules = self._load_enabled_rules(credential_id)
 
         if skip_prefix:
@@ -982,6 +986,7 @@ class EmailProcessor:
         self.logger.debug(f"Found {len(enabled_rules)} enabled rules for credential {credential_id}")
 
         rules_matched = []
+        matched_rule_names = []
         actions_taken = []
         errors = []
 
@@ -997,6 +1002,7 @@ class EmailProcessor:
                 if matched:
                     self.logger.info(f"Rule '{rule.name}' matched for email {email.uid}")
                     rules_matched.append(rule.id)
+                    matched_rule_names.append(rule.name)
 
                     actions = self._load_actions(rule.id)
                     context = {'account_email': account_email or '', 'rule_name': rule.name}
@@ -1014,10 +1020,11 @@ class EmailProcessor:
             email_uid=email.uid,
             rules_matched=rules_matched,
             actions_taken=actions_taken,
-            errors=errors
+            errors=errors,
+            total_rules_evaluated=len(enabled_rules),
+            matched_rule_names=matched_rule_names
         )
 
-        self.logger.info(f"Completed processing email {email.uid}: {len(rules_matched)} rules matched")
         return result
 
     def _is_already_processed(self, email_uid: str, credential_id: int, rule_id: int) -> bool:
@@ -1521,6 +1528,7 @@ class EMailService:
             credential_id: Email credential ID
             folder: Folder where email was found
         """
+        start_time = datetime.now()
         session = self.session_factory()
 
         try:
@@ -1618,16 +1626,39 @@ class EMailService:
             self.service_manager.increment_emails_processed()
             self.service_manager.increment_rules_executed()
 
+            # Calculate processing duration
+            duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+
+            # Build structured log entry
             total_matched = len(result.rules_matched)
             total_actions = len(result.actions_taken)
 
+            # Get spam info if available
+            spam_info = ""
+            if hasattr(email, 'spam_score') and email.spam_score is not None:
+                spam_info = f", Spam={email.spam_score:.2f}/{email.spam_category}"
+
+            # Truncate subject for readability
+            subject_truncated = (email.subject[:50] + '...') if email.subject and len(email.subject) > 50 else (email.subject or '(no subject)')
+
+            # Determine result
+            if total_matched > 0:
+                result_str = f"Matched: {', '.join(result.matched_rule_names)}"
+            elif spam_info:
+                result_str = f"Analyzed{spam_info}"
+            else:
+                result_str = "No match"
+
+            # Single comprehensive log entry per email
             self.logger.info(
-                f"Email {uid} from {folder} processed: {total_matched} rules matched, "
-                f"{total_actions} actions taken"
+                f"📧 UID={uid} | From={email.sender} | Subject=\"{subject_truncated}\" | "
+                f"Folder={folder} | Rules={total_matched}/{result.total_rules_evaluated} | "
+                f"Actions={total_actions}{spam_info} | Duration={duration_ms}ms | Result: {result_str}"
             )
 
         except Exception as e:
-            self.logger.error(f"Error processing email {uid} from {folder}: {e}")
+            duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+            self.logger.error(f"❌ UID={uid} | Folder={folder} | Duration={duration_ms}ms | Error: {e}")
 
         finally:
             session.close()
