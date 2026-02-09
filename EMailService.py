@@ -999,8 +999,11 @@ class EmailProcessor:
                 conditions = self._load_conditions(rule.id)
                 matched, details = self.rule_engine.evaluate_rule(email, rule, conditions)
 
+                # Log evaluation result for debugging
+                self.logger.debug(f"Rule '{rule.name}' evaluation: {matched}")
+
                 if matched:
-                    self.logger.info(f"Rule '{rule.name}' matched for email {email.uid}")
+                    self.logger.info(f"✓ Rule '{rule.name}' MATCHED for email {email.uid}")
                     rules_matched.append(rule.id)
                     matched_rule_names.append(rule.name)
 
@@ -1555,10 +1558,12 @@ class EMailService:
 
             # Check if already processed (cache hit)
             if handler and handler.is_processed(uid):
-                self.logger.debug(f"Email {uid} already processed (cache hit)")
+                rule_hash_short = handler.rule_hash[:8] if handler.rule_hash else 'N/A'
+                self.logger.debug(f"Email {uid} already processed (cache hit, hash={rule_hash_short})")
                 return
 
             # 1. Evaluate ALL rules (no Auto-Spam rules anymore)
+            self.logger.debug(f"Evaluating rules for email {uid} (account={account_email})")
             result = email_processor.process_email(
                 email, credential_id, account_email=account_email
             )
@@ -1641,24 +1646,32 @@ class EMailService:
             # Truncate subject for readability
             subject_truncated = (email.subject[:50] + '...') if email.subject and len(email.subject) > 50 else (email.subject or '(no subject)')
 
+            # Format recipients (truncate if many)
+            recipients_str = ', '.join(email.recipients[:3]) if email.recipients else 'N/A'
+            if len(email.recipients) > 3:
+                recipients_str += f' (+{len(email.recipients)-3} more)'
+
             # Determine result
             if total_matched > 0:
-                result_str = f"Matched: {', '.join(result.matched_rule_names)}"
+                result_str = f"✓ MATCHED: {', '.join(result.matched_rule_names)}"
             elif spam_info:
                 result_str = f"Analyzed{spam_info}"
             else:
                 result_str = "No match"
 
-            # Single comprehensive log entry per email
+            # Single comprehensive log entry per email (include account for filtering)
             self.logger.info(
-                f"📧 UID={uid} | From={email.sender} | Subject=\"{subject_truncated}\" | "
-                f"Folder={folder} | Rules={total_matched}/{result.total_rules_evaluated} | "
-                f"Actions={total_actions}{spam_info} | Duration={duration_ms}ms | Result: {result_str}"
+                f"📧 Account={account_email} | UID={uid} | From={email.sender} | To={recipients_str} | "
+                f"Subject=\"{subject_truncated}\" | Folder={folder} | "
+                f"Rules={total_matched}/{result.total_rules_evaluated} | Actions={total_actions}{spam_info} | "
+                f"Duration={duration_ms}ms | {result_str}"
             )
 
         except Exception as e:
             duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
-            self.logger.error(f"❌ UID={uid} | Folder={folder} | Duration={duration_ms}ms | Error: {e}")
+            credential = session.query(EmailCredential).filter_by(id=credential_id).first()
+            account_email = credential.email_address if credential else f'ID:{credential_id}'
+            self.logger.error(f"❌ Account={account_email} | UID={uid} | Folder={folder} | Duration={duration_ms}ms | Error: {e}")
 
         finally:
             session.close()
@@ -1706,9 +1719,9 @@ class EMailService:
             time.sleep(heartbeat_interval)
 
     def _log_cleanup_loop(self) -> None:
-        """Clean up old log entries (older than 24 hours)."""
+        """Clean up old log entries (older than 7 days)."""
         cleanup_interval = 3600  # Run every hour
-        retention_hours = 24
+        retention_hours = 168  # 7 days
 
         self.logger.info("Starting log cleanup loop")
 
