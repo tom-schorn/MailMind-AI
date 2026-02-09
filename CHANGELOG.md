@@ -80,11 +80,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.11.0-pre] - 2026-02-09
 
 ### Added
-- add whitelist/blacklist URL import and error badge in spam log
+- Whitelist/blacklist URL import from plaintext domain lists
+- Error badge for failed analyses in spam log
 
 ### Fixed
-- run spam analysis only when no regular rule matches
-- strip markdown code fences from Claude API responses
+- Strip markdown code fences from Claude API responses (JSON parse errors)
+- Run spam analysis only when no regular rule matches (saves API costs)
+- Auto-create missing IMAP spam subfolders on startup
+- Learning monitor only watches main spam folder when auto_categorize is ON
+- Persist Claude analysis errors in SpamAnalysis table for per-account visibility
 
 
 ## [1.10.0-pre] - 2026-02-08
