@@ -165,6 +165,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.2-pre] - 2026-02-09
+
+### Fixed
+- add safe integer conversion for form inputs
+
+
 ## [2.7.1-pre] - 2026-02-09
 
 ### Fixed
