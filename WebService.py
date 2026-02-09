@@ -15,6 +15,14 @@ from config_manager import load_config, save_config
 from utils import load_env_settings, save_env_settings, validate_env_value, get_env_file, get_database_url
 
 
+def safe_int(value, default=0):
+    """Safely convert value to int, return default if invalid."""
+    try:
+        return int(value) if value else default
+    except (ValueError, TypeError):
+        return default
+
+
 # Test Session Management
 class TestSession:
     """Stores logs for a test session."""
@@ -256,7 +264,7 @@ def add_account():
             account = EmailCredential(
                 email_address=request.form['email_address'],
                 host=request.form['host'],
-                port=int(request.form['port']),
+                port=safe_int(request.form.get('port', 993), 993),
                 username=request.form['username'],
                 password=request.form['password'],
                 use_ssl=encryption == 'ssl',
@@ -302,7 +310,7 @@ def edit_account(id):
             encryption = request.form.get('encryption', 'none')
             account.email_address = request.form['email_address']
             account.host = request.form['host']
-            account.port = int(request.form['port'])
+            account.port = safe_int(request.form.get('port', 993), 993)
             account.username = request.form['username']
 
             if request.form.get('password'):
@@ -592,7 +600,7 @@ def account_test_rule(id, rule_id):
             return redirect(url_for('account_rules', id=id))
 
         if request.method == 'POST':
-            max_emails = int(request.form.get('max_emails', 10))
+            max_emails = safe_int(request.form.get('max_emails', 10), 10)
 
             dry_run_request = DryRunRequest(
                 rule_id=rule.id,
@@ -857,7 +865,7 @@ def account_spam_settings(id):
                 session.add(spam_config)
 
             spam_config.enabled = 'enabled' in request.form
-            spam_config.sensitivity = int(request.form.get('sensitivity', 5))
+            spam_config.sensitivity = safe_int(request.form.get('sensitivity', 5), 5)
             spam_config.spam_folder = request.form.get('spam_folder', 'Spam')
 
             # v2.0.0: model is now in LLMConfig, not SpamConfig
@@ -1336,19 +1344,19 @@ def settings():
 
             # Save config.json settings
             config_data = {
-                'email_check_interval': int(request.form['email_check_interval']),
+                'email_check_interval': safe_int(request.form.get('email_check_interval', 5), 5),
                 'log_level': request.form['log_level'],
                 'log_to_file': 'log_to_file' in request.form,
                 'log_file_path': request.form['log_file_path'],
                 'auto_apply_rules': 'auto_apply_rules' in request.form,
-                'processing_delay_ms': int(request.form.get('processing_delay_ms', 0)),
-                'max_startup_emails': int(request.form.get('max_startup_emails', 50)),
+                'processing_delay_ms': safe_int(request.form.get('processing_delay_ms', 0), 0),
+                'max_startup_emails': safe_int(request.form.get('max_startup_emails', 50), 50),
                 'service': {
-                    'heartbeat_interval': int(request.form.get('heartbeat_interval', 10)),
-                    'dry_run_poll_interval': int(request.form.get('dry_run_poll_interval', 5)),
-                    'imap_reconnect_delay': int(request.form.get('imap_reconnect_delay', 30)),
+                    'heartbeat_interval': safe_int(request.form.get('heartbeat_interval', 10), 10),
+                    'dry_run_poll_interval': safe_int(request.form.get('dry_run_poll_interval', 5), 5),
+                    'imap_reconnect_delay': safe_int(request.form.get('imap_reconnect_delay', 30), 30),
                     'use_imap_idle': 'use_imap_idle' in request.form,
-                    'imap_poll_interval': int(request.form.get('imap_poll_interval', 60))
+                    'imap_poll_interval': safe_int(request.form.get('imap_poll_interval', 60), 60)
                 }
             }
 
