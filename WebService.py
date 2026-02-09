@@ -1269,6 +1269,8 @@ def settings():
                 'log_to_file': 'log_to_file' in request.form,
                 'log_file_path': request.form['log_file_path'],
                 'auto_apply_rules': 'auto_apply_rules' in request.form,
+                'processing_delay_ms': int(request.form.get('processing_delay_ms', 0)),
+                'max_startup_emails': int(request.form.get('max_startup_emails', 50)),
                 'service': {
                     'heartbeat_interval': int(request.form.get('heartbeat_interval', 10)),
                     'dry_run_poll_interval': int(request.form.get('dry_run_poll_interval', 5)),

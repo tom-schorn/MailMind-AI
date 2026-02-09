@@ -1486,9 +1486,10 @@ class EMailService:
                 client_key = f"{credential.id}_{folder}"
                 self.imap_clients[client_key] = imap_client
 
-                # Process existing emails on startup (limit to recent 100 for performance)
-                self.logger.debug(f"Fetching existing UIDs from {folder}...")
-                all_uids = imap_client.get_all_uids(folder, limit=100)
+                # Process existing emails on startup (configurable limit for bandwidth control)
+                startup_limit = self.config.get('max_startup_emails', 50)
+                self.logger.debug(f"Fetching existing UIDs from {folder} (limit={startup_limit})...")
+                all_uids = imap_client.get_all_uids(folder, limit=startup_limit)
                 self.logger.info(f"Processing {len(all_uids)} recent emails in {folder}")
 
                 for uid in all_uids:
@@ -1666,6 +1667,11 @@ class EMailService:
                 f"Rules={total_matched}/{result.total_rules_evaluated} | Actions={total_actions}{spam_info} | "
                 f"Duration={duration_ms}ms | {result_str}"
             )
+
+            # Rate limiting: delay between email processing to reduce bandwidth usage
+            processing_delay = self.config.get('processing_delay_ms', 0)
+            if processing_delay > 0:
+                time.sleep(processing_delay / 1000.0)
 
         except Exception as e:
             duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)

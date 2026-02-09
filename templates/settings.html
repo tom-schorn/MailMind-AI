@@ -174,6 +174,49 @@
               </div>
             </div>
 
+            <!-- Performance Settings Section -->
+            <div class="settings-section">
+              <h6 class="text-primary mb-3">⚡ Performance & Bandwidth</h6>
+              <p class="text-muted small">
+                <i class="bi bi-info-circle"></i> Control processing speed to reduce bandwidth usage
+              </p>
+
+              <div class="row mb-3">
+                <label for="processing_delay_ms" class="col-sm-3 col-form-label">Processing Delay</label>
+                <div class="col-sm-9">
+                  <div class="input-group">
+                    <input type="number" class="form-control" id="processing_delay_ms" name="processing_delay_ms"
+                           value="{{ app_settings.processing_delay_ms if app_settings.processing_delay_ms is defined else 0 }}"
+                           min="0" max="10000" step="100">
+                    <span class="input-group-text">ms</span>
+                  </div>
+                  <div class="form-text">
+                    Delay between processing each email (0 = unlimited, 1000 = 1 second delay).
+                    <strong>Recommended: 500-1000ms to reduce bandwidth usage.</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div class="row mb-3">
+                <label for="max_startup_emails" class="col-sm-3 col-form-label">Startup Email Limit</label>
+                <div class="col-sm-9">
+                  <input type="number" class="form-control" id="max_startup_emails" name="max_startup_emails"
+                         value="{{ app_settings.max_startup_emails if app_settings.max_startup_emails is defined else 50 }}"
+                         min="0" max="1000">
+                  <div class="form-text">
+                    Maximum number of recent emails to process on startup per folder.
+                    Lower values = faster startup, less bandwidth.
+                    <strong>Recommended: 20-50 emails.</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div class="alert alert-info">
+                <i class="bi bi-lightbulb"></i> <strong>Tip:</strong> If your internet connection is slow,
+                set processing delay to 1000ms and startup limit to 20. This will dramatically reduce bandwidth usage.
+              </div>
+            </div>
+
             <div class="row">
               <div class="col-sm-9 offset-sm-3">
                 <button type="submit" class="btn btn-primary">

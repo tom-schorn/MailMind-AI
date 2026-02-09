@@ -3,5 +3,7 @@
   "log_level": "INFO",
   "log_to_file": true,
   "log_file_path": "logs/mailmind.log",
-  "auto_apply_rules": false
+  "auto_apply_rules": false,
+  "processing_delay_ms": 1000,
+  "max_startup_emails": 50
 }
