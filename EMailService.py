@@ -1486,16 +1486,14 @@ class EMailService:
                 client_key = f"{credential.id}_{folder}"
                 self.imap_clients[client_key] = imap_client
 
-                # Process existing emails on startup (configurable limit for bandwidth control)
-                startup_limit = self.config.get('max_startup_emails', 50)
-                self.logger.debug(f"Fetching existing UIDs from {folder} (limit={startup_limit})...")
-                all_uids = imap_client.get_all_uids(folder, limit=startup_limit)
-                self.logger.info(f"Processing {len(all_uids)} recent emails in {folder}")
+                # NEW: Only process NEW emails, not existing ones on startup
+                # This prevents bandwidth saturation on service restart
+                self.logger.info(f"Starting watch on {folder} (existing emails will NOT be processed)")
 
-                for uid in all_uids:
-                    self._process_new_email(uid, credential.id, folder)
-
-                self.logger.debug(f"Finished processing existing emails, starting watch on {folder}")
+                # Fetch existing UIDs to establish baseline (but don't process them)
+                self.logger.debug(f"Fetching existing UIDs from {folder} for baseline...")
+                all_uids = imap_client.get_all_uids(folder, limit=100)  # Just for IDLE watch baseline
+                self.logger.debug(f"Baseline: {len(all_uids)} existing emails in {folder} (will be ignored)")
 
                 def callback(uid: str):
                     self._process_new_email(uid, credential.id, folder)
@@ -1503,7 +1501,7 @@ class EMailService:
                 def stop_check():
                     return should_stop()
 
-                # Pass the UIDs we already fetched to avoid re-fetching
+                # Pass the UIDs to watch() - only NEW emails (not in this set) will be processed
                 initial_uid_set = set(all_uids)
                 imap_client.watch(callback, stop_check, folder, initial_uids=initial_uid_set)
                 current_delay = base_delay  # Reset on successful connection

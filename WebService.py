@@ -96,6 +96,64 @@ def _signal_watcher_reload(session, credential_id: int) -> None:
     session.commit()
 
 
+def _apply_rule_to_existing_emails(credential_id: int, rule_id: int, folder: str) -> None:
+    """
+    Apply a rule to all existing emails in a folder (Outlook-style).
+    Runs in background thread to avoid blocking the UI.
+    """
+    import threading
+    from EMailService import IMAPClient
+
+    def apply_in_background():
+        session = db_service.get_session()
+        try:
+            credential = session.query(EmailCredential).filter_by(id=credential_id).first()
+            if not credential:
+                app.logger.error(f"Credential {credential_id} not found")
+                return
+
+            rule = session.query(EmailRule).filter_by(id=rule_id).first()
+            if not rule:
+                app.logger.error(f"Rule {rule_id} not found")
+                return
+
+            app.logger.info(f"Applying rule '{rule.name}' to existing emails in {folder}")
+
+            # Connect to IMAP
+            config = load_config()
+            imap_client = IMAPClient(credential, config, app.logger)
+            imap_client.connect()
+
+            # Get ALL UIDs in folder (no limit)
+            all_uids = imap_client.get_all_uids(folder, limit=0)
+            app.logger.info(f"Found {len(all_uids)} emails in {folder}, processing...")
+
+            # Import email service to process emails
+            from EMailService import EMailService
+            email_service = EMailService()
+
+            # Process each email
+            for i, uid in enumerate(all_uids, 1):
+                try:
+                    email_service._process_new_email(uid, credential_id, folder)
+                    if i % 10 == 0:
+                        app.logger.info(f"Processed {i}/{len(all_uids)} emails...")
+                except Exception as e:
+                    app.logger.error(f"Error processing email {uid}: {e}")
+
+            app.logger.info(f"Finished applying rule '{rule.name}' to {len(all_uids)} emails")
+            imap_client.disconnect()
+
+        except Exception as e:
+            app.logger.error(f"Error applying rule to existing emails: {e}")
+        finally:
+            session.close()
+
+    # Start background thread
+    thread = threading.Thread(target=apply_in_background, daemon=True)
+    thread.start()
+
+
 # v2.0.0: Auto-Spam rules removed - users create their own rules using spam_score/spam_category conditions
 
 
@@ -399,7 +457,14 @@ def account_add_rule(id):
 
             session.commit()
             _signal_watcher_reload(session, id)
-            flash('Email rule added successfully!', 'success')
+
+            # Apply to existing emails if requested (Outlook-style)
+            if 'apply_to_existing' in request.form:
+                flash(f'Rule added! Applying to existing emails in {rule.monitored_folder}...', 'info')
+                _apply_rule_to_existing_emails(id, rule.id, rule.monitored_folder)
+            else:
+                flash('Email rule added successfully! (Only new emails will be processed)', 'success')
+
             return redirect(url_for('account_rules', id=id))
         except Exception as e:
             session.rollback()
@@ -469,7 +534,14 @@ def account_edit_rule(id, rule_id):
 
             session.commit()
             _signal_watcher_reload(session, id)
-            flash('Email rule updated successfully!', 'success')
+
+            # Re-apply to existing emails if requested (Outlook-style)
+            if 'apply_to_existing' in request.form:
+                flash(f'Rule updated! Re-applying to existing emails in {rule.monitored_folder}...', 'info')
+                _apply_rule_to_existing_emails(id, rule.id, rule.monitored_folder)
+            else:
+                flash('Email rule updated successfully! (Only new emails will be processed)', 'success')
+
             return redirect(url_for('account_rules', id=id))
 
         return render_template('accounts/rules/edit.html', account=account, rule=rule)
