@@ -1294,6 +1294,14 @@ class EMailService:
             dry_run_thread.start()
             self.threads.append(dry_run_thread)
 
+            log_cleanup_thread = threading.Thread(
+                target=self._log_cleanup_loop,
+                daemon=True,
+                name="LogCleanup"
+            )
+            log_cleanup_thread.start()
+            self.threads.append(log_cleanup_thread)
+
             if self.auto_apply_rules:
                 self._start_email_watchers()
 
@@ -1665,6 +1673,54 @@ class EMailService:
                 self.logger.error(f"Error in heartbeat: {e}")
 
             time.sleep(heartbeat_interval)
+
+    def _log_cleanup_loop(self) -> None:
+        """Clean up old log entries (older than 24 hours)."""
+        cleanup_interval = 3600  # Run every hour
+        retention_hours = 24
+
+        self.logger.info("Starting log cleanup loop")
+
+        while not self.stop_event.is_set():
+            if self.stop_event.wait(timeout=cleanup_interval):
+                break
+
+            try:
+                log_path = self.config.get('log_file_path', 'logs/mailmind.log')
+                if not os.path.exists(log_path):
+                    continue
+
+                cutoff_time = datetime.now() - timedelta(hours=retention_hours)
+                log_pattern = re.compile(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - ')
+
+                # Read all logs and filter out old ones
+                kept_lines = []
+                removed_count = 0
+
+                with open(log_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        match = log_pattern.match(line)
+                        if match:
+                            timestamp_str = match.group(1)
+                            try:
+                                log_time = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+                                if log_time >= cutoff_time:
+                                    kept_lines.append(line)
+                                else:
+                                    removed_count += 1
+                            except ValueError:
+                                kept_lines.append(line)  # Keep malformed timestamps
+                        else:
+                            kept_lines.append(line)  # Keep non-log lines
+
+                # Write back filtered logs
+                if removed_count > 0:
+                    with open(log_path, 'w', encoding='utf-8') as f:
+                        f.writelines(kept_lines)
+                    self.logger.info(f"Log cleanup: removed {removed_count} entries older than {retention_hours}h")
+
+            except Exception as e:
+                self.logger.error(f"Error in log cleanup: {e}")
 
 
 if __name__ == "__main__":

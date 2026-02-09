@@ -30,11 +30,20 @@
                 <option value="ERROR">ERROR</option>
               </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-2">
+              <label for="log-time-filter" class="form-label">Time Range</label>
+              <select class="form-select form-select-sm" id="log-time-filter">
+                <option value="1">Last Hour</option>
+                <option value="6">Last 6 Hours</option>
+                <option value="24" selected>Last 24 Hours</option>
+                <option value="">All Time</option>
+              </select>
+            </div>
+            <div class="col-md-3">
               <label for="log-search-filter" class="form-label">Search</label>
               <input type="text" class="form-control form-control-sm" id="log-search-filter" placeholder="Filter messages...">
             </div>
-            <div class="col-md-6">
+            <div class="col-md-5">
               <div class="d-flex gap-2">
                 <button class="btn btn-sm btn-primary" onclick="refreshLogs()">
                   <i class="bi bi-arrow-clockwise"></i> Refresh
@@ -97,10 +106,12 @@ function getLevelBadge(level) {
 function refreshLogs() {
   const level = document.getElementById('log-level-filter').value;
   const search = document.getElementById('log-search-filter').value;
+  const hours = document.getElementById('log-time-filter').value;
 
   const params = new URLSearchParams();
   if (level) params.append('level', level);
   if (search) params.append('search', search);
+  if (hours) params.append('hours', hours);
   params.append('account', accountEmail);
   params.append('limit', '500');
 
@@ -134,10 +145,12 @@ function refreshLogs() {
 function exportLogs(format) {
   const level = document.getElementById('log-level-filter').value;
   const search = document.getElementById('log-search-filter').value;
+  const hours = document.getElementById('log-time-filter').value;
 
   const params = new URLSearchParams();
   if (level) params.append('level', level);
   if (search) params.append('search', search);
+  if (hours) params.append('hours', hours);
   params.append('account', accountEmail);
 
   window.location.href = `/api/logs/export/${format}?${params}`;
@@ -161,6 +174,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   document.getElementById('auto-refresh-toggle').addEventListener('change', toggleAutoRefresh);
   document.getElementById('log-level-filter').addEventListener('change', refreshLogs);
+  document.getElementById('log-time-filter').addEventListener('change', refreshLogs);
 
   let searchTimeout;
   document.getElementById('log-search-filter').addEventListener('input', function() {

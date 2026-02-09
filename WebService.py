@@ -1490,13 +1490,32 @@ def test_rule_preview():
         return jsonify({'error': str(e)}), 500
 
 
-def parse_log_file(path: str, level_filter: str = None, search_filter: str = None, account_filter: str = None) -> list:
-    """Parse log file and return structured entries."""
+def parse_log_file(path: str, level_filter: str = None, search_filter: str = None, account_filter: str = None,
+                   hours: int = None, start_time: str = None, end_time: str = None) -> list:
+    """Parse log file and return structured entries with optional time filtering."""
     log_pattern = re.compile(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - (\S+) - (\w+) - (.*)$')
     entries = []
 
     if not os.path.exists(path):
         return entries
+
+    # Calculate time range
+    time_filter_start = None
+    time_filter_end = None
+
+    if hours is not None:
+        time_filter_start = datetime.now() - timedelta(hours=hours)
+    elif start_time:
+        try:
+            time_filter_start = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            pass
+
+    if end_time:
+        try:
+            time_filter_end = datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            pass
 
     try:
         with open(path, 'r', encoding='utf-8') as f:
@@ -1507,6 +1526,18 @@ def parse_log_file(path: str, level_filter: str = None, search_filter: str = Non
                 match = log_pattern.match(line)
                 if match:
                     timestamp, logger, level, message = match.groups()
+
+                    # Time filtering
+                    if time_filter_start or time_filter_end:
+                        try:
+                            log_time = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+                            if time_filter_start and log_time < time_filter_start:
+                                continue
+                            if time_filter_end and log_time > time_filter_end:
+                                continue
+                        except ValueError:
+                            continue
+
                     if level_filter and level.upper() != level_filter.upper():
                         continue
                     if search_filter and search_filter.lower() not in message.lower():
@@ -1534,11 +1565,30 @@ def get_logs():
     search = request.args.get('search', '')
     account = request.args.get('account', '')
     limit = int(request.args.get('limit', 500))
+    hours = request.args.get('hours', '')  # Time filter: last N hours
+    start_time = request.args.get('start_time', '')  # Custom range start
+    end_time = request.args.get('end_time', '')  # Custom range end
 
     config = load_config()
     log_path = config.get('log_file_path', 'logs/mailmind.log')
 
-    entries = parse_log_file(log_path, level or None, search or None, account or None)
+    # Parse hours parameter
+    hours_int = None
+    if hours:
+        try:
+            hours_int = int(hours)
+        except ValueError:
+            pass
+
+    entries = parse_log_file(
+        log_path,
+        level or None,
+        search or None,
+        account or None,
+        hours=hours_int,
+        start_time=start_time or None,
+        end_time=end_time or None
+    )
 
     # Return last N entries (newest last)
     if len(entries) > limit:
@@ -1560,11 +1610,19 @@ def export_logs_csv():
     level = request.args.get('level', '')
     search = request.args.get('search', '')
     account = request.args.get('account', '')
+    hours = request.args.get('hours', '')
 
     config = load_config()
     log_path = config.get('log_file_path', 'logs/mailmind.log')
 
-    entries = parse_log_file(log_path, level or None, search or None, account or None)
+    hours_int = None
+    if hours:
+        try:
+            hours_int = int(hours)
+        except ValueError:
+            pass
+
+    entries = parse_log_file(log_path, level or None, search or None, account or None, hours=hours_int)
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -1586,11 +1644,19 @@ def export_logs_jsonl():
     level = request.args.get('level', '')
     search = request.args.get('search', '')
     account = request.args.get('account', '')
+    hours = request.args.get('hours', '')
 
     config = load_config()
     log_path = config.get('log_file_path', 'logs/mailmind.log')
 
-    entries = parse_log_file(log_path, level or None, search or None, account or None)
+    hours_int = None
+    if hours:
+        try:
+            hours_int = int(hours)
+        except ValueError:
+            pass
+
+    entries = parse_log_file(log_path, level or None, search or None, account or None, hours=hours_int)
 
     lines = [json.dumps(entry) for entry in entries]
     content = '\n'.join(lines)
