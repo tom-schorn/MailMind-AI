@@ -252,40 +252,31 @@ class AccountHandler:
         """
         Main lifecycle loop: Start → Watch → Reload → Restart.
 
-        This method runs in a dedicated thread per account.
-        It continuously:
-        1. Calculates rule hash
-        2. Loads processed UIDs
-        3. Loads LLM config
-        4. Starts folder watchers
-        5. Polls for reload signal every 10s
-        6. Restarts on signal
+        NOTE: This method is currently not used. Watcher management is handled by
+        EMailService._email_watcher_loop() which also manages reload signals.
+
+        This will be fully activated in v2.0.0 when AccountHandler takes over
+        complete watcher lifecycle management.
+
+        For now, this method only loads handler state and waits for stop signal.
         """
         self.logger.info(f"Starting AccountHandler for {self.credential.email_address}")
 
         while not self.stop_event.is_set():
             try:
-                # Regel-Hash berechnen
+                # Load handler state (for future use in v2.0.0)
                 self.rule_hash = self.calculate_rule_hash()
                 self.load_handler_config()
                 self.load_processed_uids()
                 self.load_llm_config()
 
-                # NOTE: Folder watchers would be started here
-                # For now, this is handled by EMailService directly
-                # In full v2.0.0, this should be:
+                # NOTE: In v2.0.0, this will start folder watchers:
                 # self._start_folder_watchers()
                 # self._start_spam_monitor()
 
-                # Poll für Reload-Signal (alle 10s)
-                while not self.stop_event.is_set():
-                    if self.check_reload_signal():
-                        self.logger.info(f"Restarting handler due to reload signal")
-                        # NOTE: Would stop all watchers here
-                        # self._stop_all_watchers()
-                        break  # Restart outer loop
-
-                    time.sleep(10)
+                # Wait for stop signal
+                # NOTE: Reload signal checking is handled by EMailService._email_watcher_loop()
+                self.stop_event.wait()
 
             except Exception as e:
                 self.logger.error(f"Error in AccountHandler main loop: {e}", exc_info=True)
