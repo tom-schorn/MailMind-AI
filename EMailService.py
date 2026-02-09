@@ -428,6 +428,8 @@ class IMAPClient:
         self.mailbox.folder.set(folder)
         last_uids = set(self.get_all_uids(folder))
 
+        self.logger.debug(f"IDLE watch started for {folder}, current UIDs: {len(last_uids)}, timeout: {idle_cycle_timeout}s")
+
         while not stop_check():
             try:
                 # Proactive reconnect after max_connection_age (default 25 min)
@@ -446,7 +448,9 @@ class IMAPClient:
                     continue
 
                 # 3-min IDLE cycle (default)
+                self.logger.debug(f"Entering IDLE wait for {idle_cycle_timeout}s on {folder}")
                 responses = self.mailbox.idle.wait(timeout=idle_cycle_timeout)
+                self.logger.debug(f"IDLE wait returned: {len(responses) if responses else 0} responses")
 
                 if responses:
                     current_uids = set(self.get_all_uids(folder))

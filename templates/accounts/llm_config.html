@@ -41,10 +41,10 @@
 
             <div class="mb-3">
               <label for="model" class="form-label">Model <span class="text-danger">*</span></label>
-              <input type="text" name="model" id="model" class="form-control" required
-                     value="{{ llm_config.model if llm_config else '' }}"
-                     placeholder="claude-haiku-4-5-20251001">
-              <div class="form-text">Provider-specific model name</div>
+              <select name="model" id="model" class="form-select" required>
+                <!-- Options will be populated by JavaScript based on provider -->
+              </select>
+              <div class="form-text" id="model-help">Select a model for your provider</div>
             </div>
 
             <div class="mb-3" id="endpoint-field" style="display: none;">
@@ -124,18 +124,69 @@
 </section>
 
 <script>
-// Show/hide fields based on provider
+// Model options per provider
+const modelOptions = {
+  claude: [
+    { value: 'claude-haiku-4-5-20251001', label: 'Claude 4.5 Haiku (Fast, Recommended)' },
+    { value: 'claude-sonnet-4-5-20250929', label: 'Claude 4.5 Sonnet (Accurate)' },
+    { value: 'claude-opus-4-6', label: 'Claude 4.6 Opus (Most Capable)' }
+  ],
+  gemini: [
+    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Fast)' },
+    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Accurate)' },
+    { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash (Experimental)' }
+  ],
+  openai: [
+    { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Fast, Recommended)' },
+    { value: 'gpt-4o', label: 'GPT-4o (Accurate)' },
+    { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo (Legacy)' }
+  ],
+  ollama: [
+    { value: 'llama3.2:3b', label: 'Llama 3.2 3B (Fast)' },
+    { value: 'llama3.2:1b', label: 'Llama 3.2 1B (Very Fast)' },
+    { value: 'mistral:7b', label: 'Mistral 7B' },
+    { value: 'phi3:mini', label: 'Phi-3 Mini' }
+  ]
+};
+
+const currentModel = "{{ llm_config.model if llm_config else '' }}";
+
+// Show/hide fields and populate models based on provider
 document.getElementById('provider').addEventListener('change', function() {
   const provider = this.value;
   const apiKeyField = document.getElementById('api-key-field');
   const endpointField = document.getElementById('endpoint-field');
+  const modelSelect = document.getElementById('model');
 
+  // Show/hide fields
   if (provider === 'ollama') {
     apiKeyField.style.display = 'none';
     endpointField.style.display = 'block';
   } else {
     apiKeyField.style.display = 'block';
     endpointField.style.display = 'none';
+  }
+
+  // Populate model dropdown
+  modelSelect.innerHTML = '';
+  const models = modelOptions[provider] || [];
+  models.forEach(model => {
+    const option = document.createElement('option');
+    option.value = model.value;
+    option.textContent = model.label;
+    if (model.value === currentModel) {
+      option.selected = true;
+    }
+    modelSelect.appendChild(option);
+  });
+
+  // If current model not in list, add it as custom option
+  if (currentModel && !models.find(m => m.value === currentModel)) {
+    const option = document.createElement('option');
+    option.value = currentModel;
+    option.textContent = currentModel + ' (Custom)';
+    option.selected = true;
+    modelSelect.appendChild(option);
   }
 });
 
