@@ -139,6 +139,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-02-09
+
+### Added
+- v2.0.0 Multi-LLM Support & Architecture Refactoring (#17)
+
+### Changed
+- bump version to 1.11.0-pre, update changelog
+
+
 ## [1.11.0-pre] - 2026-02-09
 
 ### Added
