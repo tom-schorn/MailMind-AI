@@ -165,6 +165,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0-pre] - 2026-02-09
+
+### Added
+- add bandwidth control and rate limiting
+
+
 ## [2.5.1-pre] - 2026-02-09
 
 ### Fixed
