@@ -44,6 +44,7 @@ Thumbs.db
 *.log
 *.log.*
 logs/
+*.jsonl
 
 # MailMind state
 mailmind_state.json
@@ -52,6 +53,7 @@ config.json
 
 # Claude Code
 .claude/
+memory/
 
 # Windows artifacts
 nul
