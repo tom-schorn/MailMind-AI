@@ -395,7 +395,7 @@ class IMAPClient:
             self.logger.error(f"Failed to delete email {uid}: {e}")
             raise
 
-    def watch(self, callback: Callable, stop_check: Callable, folder: str = "INBOX") -> None:
+    def watch(self, callback: Callable, stop_check: Callable, folder: str = "INBOX", initial_uids: set = None) -> None:
         """
         Watch for new emails using IDLE or polling.
 
@@ -403,6 +403,7 @@ class IMAPClient:
             callback: Function to call with new email UID
             stop_check: Function returning True when watching should stop
             folder: Folder to monitor (default: INBOX)
+            initial_uids: Set of UIDs already known (avoids re-fetching)
         """
         if not self.connected:
             raise ConnectionError("Not connected to IMAP server")
@@ -416,22 +417,29 @@ class IMAPClient:
         try:
             if use_idle:
                 self.logger.debug(f"Calling _watch_idle for {folder}")
-                self._watch_idle(callback, stop_check, folder)
+                self._watch_idle(callback, stop_check, folder, initial_uids)
             else:
-                self._watch_polling(callback, stop_check, folder, poll_interval)
+                self._watch_polling(callback, stop_check, folder, poll_interval, initial_uids)
 
         except Exception as e:
             self.logger.error(f"Error in watch loop: {e}")
             raise
 
-    def _watch_idle(self, callback: Callable, stop_check: Callable, folder: str = 'INBOX') -> None:
+    def _watch_idle(self, callback: Callable, stop_check: Callable, folder: str = 'INBOX', initial_uids: set = None) -> None:
         """Watch using IMAP IDLE command with proactive reconnect (RFC 2177 hybrid)."""
         idle_cycle_timeout = self.config.get('service', {}).get('imap_idle_cycle_timeout', 180)
         max_connection_age = self.config.get('service', {}).get('imap_max_connection_age', 1500)
 
         connection_start = time.monotonic()
         self.mailbox.folder.set(folder)
-        last_uids = set(self.get_all_uids(folder))
+
+        # Use provided UIDs or fetch with limit
+        if initial_uids is not None:
+            last_uids = initial_uids
+            self.logger.debug(f"Using {len(last_uids)} initial UIDs for {folder}")
+        else:
+            last_uids = set(self.get_all_uids(folder, limit=100))
+            self.logger.debug(f"Fetched {len(last_uids)} recent UIDs for {folder}")
 
         self.logger.debug(f"IDLE watch started for {folder}, current UIDs: {len(last_uids)}, timeout: {idle_cycle_timeout}s")
 
@@ -485,10 +493,17 @@ class IMAPClient:
                 self.logger.error(f"Unexpected error in IDLE watch: {e}")
                 time.sleep(5)
 
-    def _watch_polling(self, callback: Callable, stop_check: Callable, folder: str = 'INBOX', interval: int = 60) -> None:
+    def _watch_polling(self, callback: Callable, stop_check: Callable, folder: str = 'INBOX', interval: int = 60, initial_uids: set = None) -> None:
         """Watch using polling with auto-reconnect on connection errors."""
         self.mailbox.folder.set(folder)
-        last_uids = set(self.get_all_uids(folder))
+
+        # Use provided UIDs or fetch with limit
+        if initial_uids is not None:
+            last_uids = initial_uids
+            self.logger.debug(f"Using {len(last_uids)} initial UIDs for {folder}")
+        else:
+            last_uids = set(self.get_all_uids(folder, limit=100))
+            self.logger.debug(f"Fetched {len(last_uids)} recent UIDs for {folder}")
 
         while not stop_check():
             try:
@@ -1593,7 +1608,9 @@ class EMailService:
                 def stop_check():
                     return should_stop()
 
-                imap_client.watch(callback, stop_check, folder)
+                # Pass the UIDs we already fetched to avoid re-fetching
+                initial_uid_set = set(all_uids)
+                imap_client.watch(callback, stop_check, folder, initial_uids=initial_uid_set)
                 current_delay = base_delay  # Reset on successful connection
 
             except Exception as e:
@@ -1872,8 +1889,8 @@ class DryRunHandler:
         rule_engine = RuleEngine(imap_client, self.logger)
 
         folder = rule.monitored_folder or 'INBOX'
-        uids = imap_client.get_all_uids(folder=folder, limit=0)
-        self.logger.info(f"Processing emails for dry-run (max 10 matches)")
+        uids = imap_client.get_all_uids(folder=folder, limit=100)  # Only check recent 100 emails
+        self.logger.info(f"Processing emails for dry-run (max 10 matches from {len(uids)} recent emails)")
 
         matched_count = 0
         max_matches = 10

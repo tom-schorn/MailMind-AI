@@ -33,13 +33,14 @@ class SpamResult:
 
 
 class SpamAnalyzer:
-    """Orchestrates the 4-step spam analysis pipeline using configurable LLM provider."""
+    """Orchestrates the spam analysis pipeline using configurable LLM provider."""
 
     STEP_WEIGHTS = {
-        "headers": 0.25,
-        "sender": 0.25,
-        "subject": 0.20,
-        "content": 0.30,
+        "headers": 0.20,
+        "sender": 0.15,
+        "subject": 0.15,
+        "content": 0.25,
+        "domain": 0.25,  # Domain spoofing check (highest weight!)
     }
 
     def __init__(self, llm_config, sensitivity: int = 5, logger: logging.Logger = None):
@@ -104,6 +105,18 @@ class SpamAnalyzer:
             ("subject", lambda: self.llm_analyzer.analyze_subject(email.subject)),
             ("content", lambda: self.llm_analyzer.analyze_content(email.body_text or email.body_html, email.subject)),
         ]
+
+        # Add domain spoofing check if analyzer supports it (Claude only for now)
+        if hasattr(self.llm_analyzer, 'analyze_domain_spoofing'):
+            sender_name = self._extract_sender_name(email.sender)
+            body_preview = (email.body_text or email.body_html or "")[:500]
+            steps.append((
+                "domain",
+                lambda: self.llm_analyzer.analyze_domain_spoofing(
+                    email.sender, sender_name, email.subject, body_preview
+                )
+            ))
+            self.logger.debug("Domain spoofing check enabled")
 
         stopped_early = False
 
@@ -171,6 +184,28 @@ class SpamAnalyzer:
             stopped_early=stopped_early,
             reason=f"Score={final_score:.2f}, Category={final_category.value} [{', '.join(reason_parts)}]",
         )
+
+    @staticmethod
+    def _extract_sender_name(sender: str) -> str:
+        """
+        Extract display name from email address.
+
+        Examples:
+            "John Doe <john@example.com>" -> "John Doe"
+            "john@example.com" -> "john@example.com"
+            "Lotto24 GmbH <winner@spam.com>" -> "Lotto24 GmbH"
+        """
+        if not sender:
+            return ""
+
+        # Check for display name format: "Name <email>"
+        if '<' in sender and '>' in sender:
+            name_part = sender.split('<')[0].strip()
+            # Remove quotes if present
+            name_part = name_part.strip('"').strip("'")
+            return name_part if name_part else sender
+
+        return sender
 
     @staticmethod
     def _extract_domain(sender: str) -> Optional[str]:

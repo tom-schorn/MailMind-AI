@@ -182,3 +182,104 @@ class ClaudeAnalyzer(LLMAnalyzer):
         context = f"Subject: {subject}\n\n" if subject else ""
         prompt = f"Analyze this email content for spam/phishing/scam indicators:\n{context}{truncated}"
         return self._query(prompt)
+
+    def analyze_domain_spoofing(self, sender: str, sender_name: str, subject: str = "", body_preview: str = "") -> AnalysisResult:
+        """
+        Analyze if sender domain matches expected domain based on sender name.
+
+        Detects domain spoofing where email claims to be from a known company
+        but uses a different domain (e.g., "Lotto24" from @gmail.com).
+
+        Args:
+            sender: Actual email address (e.g., "winner@gmail.com")
+            sender_name: Display name (e.g., "Lotto24 GmbH")
+            subject: Email subject for additional context
+            body_preview: First 500 chars of body for context
+
+        Returns:
+            AnalysisResult with high score if domain mismatch detected
+        """
+        self.logger.debug(f"Analyzing domain spoofing: '{sender_name}' <{sender}>")
+
+        if not sender or not sender_name:
+            return AnalysisResult(
+                score=0.0,
+                category="unknown",
+                is_certain=False,
+                reasoning="Insufficient data for domain check"
+            )
+
+        # Extract actual domain
+        if '@' not in sender:
+            return AnalysisResult(
+                score=0.0,
+                category="unknown",
+                is_certain=False,
+                reasoning="Invalid sender format"
+            )
+
+        actual_domain = sender.split('@')[1].lower()
+
+        # Build context for LLM
+        context = f"""
+Sender name: {sender_name}
+Actual email: {sender}
+Subject: {subject[:100]}
+Preview: {body_preview[:200]}
+
+Based on the sender name "{sender_name}", what domain(s) would you expect this email to come from?
+Consider official domains only (e.g., for "ING-DiBa" expect "ing.de", for "Lotto24" expect "lotto24.de").
+
+Respond ONLY with valid JSON:
+{{"expected_domains": ["domain1.com", "domain2.de"], "score": 0.0, "category": "legitimate", "is_certain": false, "reasoning": "brief explanation"}}
+
+- expected_domains: List of legitimate domains for this sender (empty if personal/unknown sender)
+- score: 0.0 if actual domain matches expected, 0.8-1.0 if clear mismatch (phishing), 0.5 if uncertain
+- category: "phishing" if mismatch, "legitimate" if match, "unknown" if personal sender
+""".strip()
+
+        result = self._query(context)
+
+        # Post-process: Check if actual domain matches expected
+        try:
+            expected_domains = result.raw_data.get("response", {}).get("expected_domains", [])
+            if expected_domains:
+                # Normalize domains
+                expected_domains = [d.lower().strip() for d in expected_domains]
+
+                # Check for match (exact or subdomain)
+                is_match = any(
+                    actual_domain == expected or actual_domain.endswith('.' + expected)
+                    for expected in expected_domains
+                )
+
+                if not is_match:
+                    # Domain mismatch detected - likely phishing!
+                    self.logger.warning(
+                        f"Domain spoofing detected: '{sender_name}' uses {actual_domain}, "
+                        f"expected {expected_domains}"
+                    )
+                    return AnalysisResult(
+                        score=0.9,  # High spam score for domain mismatch
+                        category="phishing",
+                        is_certain=True,
+                        reasoning=f"Domain mismatch: expected {expected_domains[0]}, got {actual_domain}",
+                        raw_data=result.raw_data
+                    )
+                else:
+                    # Domain matches - legitimate
+                    self.logger.debug(f"Domain match confirmed: {actual_domain} in {expected_domains}")
+                    return AnalysisResult(
+                        score=0.0,  # Legitimate
+                        category="legitimate",
+                        is_certain=True,
+                        reasoning=f"Domain verified: {actual_domain}",
+                        raw_data=result.raw_data
+                    )
+            else:
+                # No expected domains (personal email, etc.) - return LLM result as-is
+                return result
+
+        except (KeyError, IndexError, AttributeError) as e:
+            self.logger.warning(f"Failed to parse domain validation response: {e}")
+            return result  # Return original LLM result
