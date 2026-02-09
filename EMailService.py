@@ -218,12 +218,15 @@ class IMAPClient:
         if not self.connected:
             raise ConnectionError("Not connected to IMAP server")
 
+        self.logger.debug(f"Getting UIDs from {folder} (limit: {limit if limit > 0 else 'none'})")
+
         max_retries = 2
         for attempt in range(max_retries):
             try:
                 self.mailbox.folder.set(folder)
                 uids = []
 
+                self.logger.debug(f"Starting UID fetch from {folder}...")
                 for msg in self.mailbox.fetch(AND(all=True), mark_seen=False, reverse=True):
                     uids.append(msg.uid)
                     if limit > 0 and len(uids) >= limit:
@@ -407,10 +410,12 @@ class IMAPClient:
         use_idle = self.config.get('service', {}).get('use_imap_idle', True)
         poll_interval = self.config.get('service', {}).get('imap_poll_interval', 60)
 
-        self.logger.info(f"Starting email watch (mode: {'IDLE' if use_idle else 'POLLING'})")
+        self.logger.info(f"Starting email watch on {folder} (mode: {'IDLE' if use_idle else 'POLLING'})")
+        self.logger.debug(f"Watch parameters: use_idle={use_idle}, poll_interval={poll_interval}")
 
         try:
             if use_idle:
+                self.logger.debug(f"Calling _watch_idle for {folder}")
                 self._watch_idle(callback, stop_check, folder)
             else:
                 self._watch_polling(callback, stop_check, folder, poll_interval)
@@ -1572,11 +1577,15 @@ class EMailService:
                 client_key = f"{credential.id}_{folder}"
                 self.imap_clients[client_key] = imap_client
 
-                # Process all existing emails on startup (skip already processed ones)
-                all_uids = imap_client.get_all_uids(folder)
-                self.logger.info(f"Processing {len(all_uids)} existing emails in {folder}")
+                # Process existing emails on startup (limit to recent 100 for performance)
+                self.logger.debug(f"Fetching existing UIDs from {folder}...")
+                all_uids = imap_client.get_all_uids(folder, limit=100)
+                self.logger.info(f"Processing {len(all_uids)} recent emails in {folder}")
+
                 for uid in all_uids:
                     self._process_new_email(uid, credential.id, folder)
+
+                self.logger.debug(f"Finished processing existing emails, starting watch on {folder}")
 
                 def callback(uid: str):
                     self._process_new_email(uid, credential.id, folder)
