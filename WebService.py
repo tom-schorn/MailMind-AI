@@ -154,6 +154,17 @@ db_service = DatabaseService(get_database_url())
 db_service.init_db()
 
 
+# Make app version available in all templates
+@app.context_processor
+def inject_app_version():
+    """Inject app version into all templates."""
+    try:
+        from mailmind import __version__
+        return {'app_version': __version__}
+    except ImportError:
+        return {'app_version': 'dev'}
+
+
 @app.route('/')
 def index():
     return redirect(url_for('list_accounts'))
