@@ -159,9 +159,17 @@ db_service.init_db()
 def inject_app_version():
     """Inject app version into all templates."""
     try:
-        from mailmind import __version__
-        return {'app_version': __version__}
-    except ImportError:
+        # Read version directly from src/mailmind/__init__.py
+        version_file = os.path.join(os.path.dirname(__file__), 'src', 'mailmind', '__init__.py')
+        if os.path.exists(version_file):
+            with open(version_file, 'r') as f:
+                for line in f:
+                    if line.startswith('__version__'):
+                        # Extract version from: __version__ = "2.2.0-pre"
+                        version = line.split('=')[1].strip().strip('"').strip("'")
+                        return {'app_version': version}
+        return {'app_version': 'dev'}
+    except Exception:
         return {'app_version': 'dev'}
 
 
