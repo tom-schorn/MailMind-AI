@@ -130,6 +130,7 @@ class EmailRuleApplication(Base):
     rule_id: Mapped[int] = mapped_column(Integer, ForeignKey('emailrule.id'), nullable=False)
     email_uid: Mapped[str] = mapped_column(String(100), nullable=False)
     email_subject: Mapped[str] = mapped_column(String(255), nullable=True)
+    rule_config_hash: Mapped[str] = mapped_column(String(64), nullable=True)
     applied_at: Mapped[DateTime] = mapped_column(DateTime, default=func.current_timestamp())
     actions_taken: Mapped[str] = mapped_column(Text, nullable=True)
 
