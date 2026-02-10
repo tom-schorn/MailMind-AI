@@ -257,7 +257,7 @@ class DatabaseMigrator:
                 return "1.0.0"
 
             version = self.session.query(DatabaseVersion).order_by(
-                DatabaseVersion.applied_at.desc()
+                DatabaseVersion.id.desc()
             ).first()
 
             return version.version if version else "1.0.0"
@@ -265,6 +265,14 @@ class DatabaseMigrator:
         except Exception as e:
             self.logger.error(f"Error getting DB version: {e}")
             return "1.0.0"
+
+    def _has_version(self, version: str) -> bool:
+        """Check if a specific version record exists."""
+        try:
+            result = self.session.query(DatabaseVersion).filter_by(version=version).first()
+            return result is not None
+        except Exception:
+            return False
 
     def needs_migration(self) -> bool:
         """Check if migration is needed."""
@@ -331,11 +339,11 @@ class DatabaseMigrator:
                 """))
                 self.logger.info("Added monitored_folder column to emailrule")
 
-            version_record = DatabaseVersion(
-                version="1.1.0",
-                description="Add monitored_folder to EmailRule"
-            )
-            self.session.add(version_record)
+            if not self._has_version("1.1.0"):
+                self.session.add(DatabaseVersion(
+                    version="1.1.0",
+                    description="Add monitored_folder to EmailRule"
+                ))
             self.session.commit()
 
             self.logger.info("Migration 1.0.0 -> 1.1.0 completed successfully")
@@ -364,11 +372,11 @@ class DatabaseMigrator:
             """))
             self.logger.info("Created emailruleapplication table")
 
-            version_record = DatabaseVersion(
-                version="1.2.0",
-                description="Add per-rule email tracking with EmailRuleApplication table"
-            )
-            self.session.add(version_record)
+            if not self._has_version("1.2.0"):
+                self.session.add(DatabaseVersion(
+                    version="1.2.0",
+                    description="Add per-rule email tracking with EmailRuleApplication table"
+                ))
             self.session.commit()
 
             self.logger.info("Migration 1.1.0 -> 1.2.0 completed successfully")
@@ -397,11 +405,11 @@ class DatabaseMigrator:
             """))
             self.logger.info("Created label table")
 
-            version_record = DatabaseVersion(
-                version="1.3.0",
-                description="Add Label table for label management"
-            )
-            self.session.add(version_record)
+            if not self._has_version("1.3.0"):
+                self.session.add(DatabaseVersion(
+                    version="1.3.0",
+                    description="Add Label table for label management"
+                ))
             self.session.commit()
 
             self.logger.info("Migration 1.2.0 -> 1.3.0 completed successfully")
@@ -440,11 +448,11 @@ class DatabaseMigrator:
             """))
             self.logger.info("Created watcherreloadsignal table")
 
-            version_record = DatabaseVersion(
-                version="1.4.0",
-                description="Add email_subject to EmailRuleApplication, add WatcherReloadSignal table"
-            )
-            self.session.add(version_record)
+            if not self._has_version("1.4.0"):
+                self.session.add(DatabaseVersion(
+                    version="1.4.0",
+                    description="Add email_subject to EmailRuleApplication, add WatcherReloadSignal table"
+                ))
             self.session.commit()
 
             self.logger.info("Migration 1.3.0 -> 1.4.0 completed successfully")
@@ -515,11 +523,11 @@ class DatabaseMigrator:
             """))
             self.logger.info("Created blacklistentry table")
 
-            version_record = DatabaseVersion(
-                version="1.5.0",
-                description="Add spam detection tables (SpamConfig, SpamAnalysis, WhitelistEntry, BlacklistEntry)"
-            )
-            self.session.add(version_record)
+            if not self._has_version("1.5.0"):
+                self.session.add(DatabaseVersion(
+                    version="1.5.0",
+                    description="Add spam detection tables (SpamConfig, SpamAnalysis, WhitelistEntry, BlacklistEntry)"
+                ))
             self.session.commit()
 
             self.logger.info("Migration 1.4.0 -> 1.5.0 completed successfully")
@@ -649,11 +657,11 @@ class DatabaseMigrator:
 
             self.logger.info(f"Deleted {deleted_count} [Auto-Spam] rules")
 
-            version_record = DatabaseVersion(
-                version="2.0.0",
-                description="Add LLMConfig, AccountHandlerConfig, rule_config_hash, remove Auto-Spam rules"
-            )
-            self.session.add(version_record)
+            if not self._has_version("2.0.0"):
+                self.session.add(DatabaseVersion(
+                    version="2.0.0",
+                    description="Add LLMConfig, AccountHandlerConfig, rule_config_hash, remove Auto-Spam rules"
+                ))
             self.session.commit()
 
             self.logger.info("Migration 1.5.0 -> 2.0.0 completed successfully")
