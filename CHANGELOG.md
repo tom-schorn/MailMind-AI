@@ -165,6 +165,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0-pre] - 2026-02-10
+
+### Added
+- add settings and account import/export
+
+### Fixed
+- add thread safety for imap_clients and processed_uids
+
+
 ## [2.7.3-pre] - 2026-02-09
 
 ### Changed
