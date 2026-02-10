@@ -515,8 +515,12 @@ class IMAPClient:
                 except (socket.error, OSError, imaplib.IMAP4.abort, TimeoutError,
                         ssl.SSLError, BrokenPipeError, ConnectionError) as e:
                     self.logger.warning(f"NOOP keepalive failed, reconnecting: {e}")
-                    self.reconnect()
-                    self.mailbox.folder.set(folder)
+                    try:
+                        self.reconnect()
+                        self.mailbox.folder.set(folder)
+                    except Exception as reconnect_error:
+                        self.logger.error(f"NOOP reconnect failed: {reconnect_error}")
+                        break
 
                 time.sleep(interval)
 
@@ -534,9 +538,7 @@ class IMAPClient:
                 self.logger.warning(f"Connection error in polling watch: {e}")
                 try:
                     self.reconnect()
-                    # Only continue if reconnect was successful
                     self.mailbox.folder.set(folder)
-                    connection_start = time.monotonic()
                 except Exception as reconnect_error:
                     self.logger.error(f"Reconnection failed: {reconnect_error}")
                     time.sleep(5)
@@ -1283,7 +1285,8 @@ class EMailService:
         )
 
         self.imap_clients: Dict[str, IMAPClient] = {}
-        self.account_handlers: Dict[int, AccountHandler] = {}  # v2.0.0: Account handlers by credential_id
+        self._clients_lock = threading.Lock()
+        self.account_handlers: Dict[int, AccountHandler] = {}
         self.stop_event = threading.Event()
         self.threads = []
 
@@ -1345,7 +1348,9 @@ class EMailService:
 
         self.stop_event.set()
 
-        for client in self.imap_clients.values():
+        with self._clients_lock:
+            clients = list(self.imap_clients.values())
+        for client in clients:
             try:
                 client.disconnect()
             except Exception as e:
@@ -1366,24 +1371,18 @@ class EMailService:
             self.logger.info(f"Starting email watchers for {len(credentials)} accounts")
 
             for credential in credentials:
-                # v2.0.0: Create and start AccountHandler
                 handler = AccountHandler(
                     credential,
                     self.session_factory,
                     self.config,
                     self.logger
                 )
+                handler.rule_hash = handler.calculate_rule_hash()
+                handler.load_handler_config()
+                handler.load_processed_uids()
+                handler.load_llm_config()
                 self.account_handlers[credential.id] = handler
 
-                handler_thread = threading.Thread(
-                    target=handler.run,
-                    daemon=True,
-                    name=f"AccountHandler-{credential.id}"
-                )
-                handler_thread.start()
-                self.threads.append(handler_thread)
-
-                # Existing watcher thread (for folder monitoring)
                 watcher_thread = threading.Thread(
                     target=self._email_watcher_loop,
                     args=(credential,),
@@ -1456,6 +1455,11 @@ class EMailService:
                         session.delete(signal)
                         session.commit()
 
+                        # Refresh handler state
+                        handler = self.account_handlers.get(credential.id)
+                        if handler:
+                            handler.refresh_state()
+
                         # Stop current folder watchers
                         credential_stop.set()
                         for thread in folder_threads:
@@ -1494,7 +1498,8 @@ class EMailService:
                 imap_client.connect()
 
                 client_key = f"{credential.id}_{folder}"
-                self.imap_clients[client_key] = imap_client
+                with self._clients_lock:
+                    self.imap_clients[client_key] = imap_client
 
                 # NEW: Only process NEW emails, not existing ones on startup
                 # This prevents bandwidth saturation on service restart
@@ -1524,18 +1529,13 @@ class EMailService:
 
             finally:
                 client_key = f"{credential.id}_{folder}"
-                if client_key in self.imap_clients:
+                with self._clients_lock:
+                    client = self.imap_clients.pop(client_key, None)
+                if client:
                     try:
-                        self.imap_clients[client_key].disconnect()
-                        del self.imap_clients[client_key]
+                        client.disconnect()
                     except Exception as e:
-                        # Only log error, don't re-raise - cleanup must not fail
                         self.logger.debug(f"Client disconnect cleanup failed: {e}")
-                        # Remove from dict even if disconnect failed
-                        try:
-                            del self.imap_clients[client_key]
-                        except:
-                            pass
 
     def _process_new_email(self, uid: str, credential_id: int, folder: str = 'INBOX') -> None:
         """
@@ -1551,10 +1551,10 @@ class EMailService:
 
         try:
             client_key = f"{credential_id}_{folder}"
-            imap_client = self.imap_clients.get(client_key)
-
-            if not imap_client:
-                imap_client = self.imap_clients.get(credential_id)
+            with self._clients_lock:
+                imap_client = self.imap_clients.get(client_key)
+                if not imap_client:
+                    imap_client = self.imap_clients.get(credential_id)
 
             if not imap_client:
                 self.logger.warning(f"No IMAP client for credential {credential_id}/{folder}")

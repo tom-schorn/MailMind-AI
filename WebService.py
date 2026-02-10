@@ -1852,6 +1852,466 @@ def account_handler_config(id):
         session.close()
 
 
+def _build_export_metadata(export_type: str) -> dict:
+    """Build standard export metadata header."""
+    try:
+        version_file = os.path.join(os.path.dirname(__file__), 'src', 'mailmind', '__init__.py')
+        version = 'dev'
+        if os.path.exists(version_file):
+            with open(version_file, 'r') as f:
+                for line in f:
+                    if line.startswith('__version__'):
+                        version = line.split('=')[1].strip().strip('"').strip("'")
+                        break
+    except Exception:
+        version = 'dev'
+
+    return {
+        'version': version,
+        'exported_at': datetime.now().isoformat(),
+        'type': export_type
+    }
+
+
+def _export_settings() -> dict:
+    """Export current application settings."""
+    config = load_config()
+    return config
+
+
+def _export_account(session, credential) -> dict:
+    """Export a single account with all related data."""
+    # Rules
+    rules_data = []
+    rules = session.query(EmailRule).filter_by(email_credential_id=credential.id).all()
+    for rule in rules:
+        conditions = session.query(RuleCondition).filter_by(rule_id=rule.id).all()
+        actions = session.query(RuleAction).filter_by(rule_id=rule.id).all()
+
+        rules_data.append({
+            'name': rule.name,
+            'enabled': rule.enabled,
+            'condition': rule.condition,
+            'monitored_folder': rule.monitored_folder or 'INBOX',
+            'conditions': [
+                {'field': c.field, 'operator': c.operator, 'value': c.value}
+                for c in conditions
+            ],
+            'actions': [
+                {
+                    'action_type': a.action_type,
+                    'action_value': a.action_value or '',
+                    'folder': a.folder,
+                    'label': a.label
+                }
+                for a in actions
+            ]
+        })
+
+    # Labels
+    labels = session.query(Label).filter_by(credential_id=credential.id).all()
+    labels_data = [
+        {'name': l.name, 'color': l.color, 'is_imap_flag': l.is_imap_flag}
+        for l in labels
+    ]
+
+    # Spam config
+    spam_config = session.query(SpamConfig).filter_by(credential_id=credential.id).first()
+    spam_data = None
+    if spam_config:
+        spam_data = {
+            'enabled': spam_config.enabled,
+            'sensitivity': spam_config.sensitivity,
+            'spam_folder': spam_config.spam_folder,
+            'auto_categorize': getattr(spam_config, 'auto_categorize', False)
+        }
+
+    # Whitelist / Blacklist
+    whitelist = session.query(WhitelistEntry).filter_by(credential_id=credential.id).all()
+    blacklist = session.query(BlacklistEntry).filter_by(credential_id=credential.id).all()
+
+    # LLM config (api_key = null for security)
+    llm_config = session.query(LLMConfig).filter_by(credential_id=credential.id).first()
+    llm_data = None
+    if llm_config:
+        llm_data = {
+            'provider': llm_config.provider,
+            'model': llm_config.model,
+            'api_key': None,
+            'endpoint': llm_config.endpoint
+        }
+
+    # Handler config
+    handler_config = session.query(AccountHandlerConfig).filter_by(credential_id=credential.id).first()
+    handler_data = None
+    if handler_config:
+        handler_data = {
+            'persistent_processed_tracking': handler_config.persistent_processed_tracking
+        }
+
+    return {
+        'email_address': credential.email_address,
+        'host': credential.host,
+        'port': credential.port,
+        'use_ssl': credential.use_ssl,
+        'use_tls': credential.use_tls,
+        'username': credential.username,
+        'password': None,
+        'rules': rules_data,
+        'labels': labels_data,
+        'spam_config': spam_data,
+        'whitelist': [{'domain': w.domain, 'reason': w.reason} for w in whitelist],
+        'blacklist': [{'domain': b.domain, 'reason': b.reason} for b in blacklist],
+        'llm_config': llm_data,
+        'handler_config': handler_data
+    }
+
+
+def _import_account_data(session, credential, account_data: dict) -> None:
+    """Import account configuration data into an existing credential."""
+    credential_id = credential.id
+
+    # Delete existing rules (with conditions/actions)
+    existing_rules = session.query(EmailRule).filter_by(email_credential_id=credential_id).all()
+    for rule in existing_rules:
+        session.query(RuleCondition).filter_by(rule_id=rule.id).delete()
+        session.query(RuleAction).filter_by(rule_id=rule.id).delete()
+        session.delete(rule)
+
+    # Delete existing labels, spam config, whitelist, blacklist, llm config, handler config
+    session.query(Label).filter_by(credential_id=credential_id).delete()
+    session.query(SpamConfig).filter_by(credential_id=credential_id).delete()
+    session.query(WhitelistEntry).filter_by(credential_id=credential_id).delete()
+    session.query(BlacklistEntry).filter_by(credential_id=credential_id).delete()
+    session.query(LLMConfig).filter_by(credential_id=credential_id).delete()
+    session.query(AccountHandlerConfig).filter_by(credential_id=credential_id).delete()
+
+    # Import rules
+    for rule_data in account_data.get('rules', []):
+        rule = EmailRule(
+            email_credential_id=credential_id,
+            name=rule_data['name'],
+            enabled=rule_data.get('enabled', True),
+            condition=rule_data.get('condition', 'AND'),
+            actions='',
+            monitored_folder=rule_data.get('monitored_folder', 'INBOX')
+        )
+        session.add(rule)
+        session.flush()
+
+        for cond in rule_data.get('conditions', []):
+            session.add(RuleCondition(
+                rule_id=rule.id,
+                field=cond['field'],
+                operator=cond['operator'],
+                value=cond['value']
+            ))
+
+        for act in rule_data.get('actions', []):
+            session.add(RuleAction(
+                rule_id=rule.id,
+                action_type=act['action_type'],
+                action_value=act.get('action_value', ''),
+                folder=act.get('folder'),
+                label=act.get('label')
+            ))
+
+    # Import labels
+    for label_data in account_data.get('labels', []):
+        session.add(Label(
+            credential_id=credential_id,
+            name=label_data['name'],
+            color=label_data.get('color', '#0d6efd'),
+            is_imap_flag=label_data.get('is_imap_flag', False)
+        ))
+
+    # Import spam config
+    spam_data = account_data.get('spam_config')
+    if spam_data:
+        session.add(SpamConfig(
+            credential_id=credential_id,
+            enabled=spam_data.get('enabled', False),
+            sensitivity=spam_data.get('sensitivity', 5),
+            spam_folder=spam_data.get('spam_folder', 'Spam')
+        ))
+
+    # Import whitelist
+    for w in account_data.get('whitelist', []):
+        session.add(WhitelistEntry(
+            credential_id=credential_id,
+            domain=w['domain'],
+            reason=w.get('reason')
+        ))
+
+    # Import blacklist
+    for b in account_data.get('blacklist', []):
+        session.add(BlacklistEntry(
+            credential_id=credential_id,
+            domain=b['domain'],
+            reason=b.get('reason')
+        ))
+
+    # Import LLM config (without api_key)
+    llm_data = account_data.get('llm_config')
+    if llm_data:
+        session.add(LLMConfig(
+            credential_id=credential_id,
+            provider=llm_data.get('provider', 'claude'),
+            model=llm_data.get('model', ''),
+            api_key='',
+            endpoint=llm_data.get('endpoint', '')
+        ))
+
+    # Import handler config
+    handler_data = account_data.get('handler_config')
+    if handler_data:
+        session.add(AccountHandlerConfig(
+            credential_id=credential_id,
+            persistent_processed_tracking=handler_data.get('persistent_processed_tracking', True)
+        ))
+
+    # Signal watcher reload
+    _signal_watcher_reload(session, credential_id)
+
+
+# --- Export/Import API Routes ---
+
+@app.route('/api/settings/export')
+def export_settings():
+    """Export application settings as JSON download."""
+    export_data = {
+        'mailmind_export': _build_export_metadata('settings'),
+        'settings': _export_settings()
+    }
+
+    response = app.response_class(
+        json.dumps(export_data, indent=2, ensure_ascii=False),
+        mimetype='application/json',
+        headers={'Content-Disposition': 'attachment; filename=mailmind-settings.json'}
+    )
+    return response
+
+
+@app.route('/api/settings/import', methods=['POST'])
+def import_settings():
+    """Import application settings from JSON upload."""
+    try:
+        if 'file' not in request.files:
+            flash('No file selected', 'danger')
+            return redirect(url_for('settings'))
+
+        file = request.files['file']
+        if not file.filename:
+            flash('No file selected', 'danger')
+            return redirect(url_for('settings'))
+
+        data = json.loads(file.read().decode('utf-8'))
+
+        if 'mailmind_export' not in data:
+            flash('Invalid export file format', 'danger')
+            return redirect(url_for('settings'))
+
+        export_type = data['mailmind_export'].get('type', '')
+        if export_type not in ('settings', 'full'):
+            flash('File does not contain settings data', 'danger')
+            return redirect(url_for('settings'))
+
+        if 'settings' not in data:
+            flash('No settings data found in file', 'danger')
+            return redirect(url_for('settings'))
+
+        save_config(data['settings'])
+        flash('Settings imported successfully! Restart required for some changes.', 'success')
+
+    except json.JSONDecodeError:
+        flash('Invalid JSON file', 'danger')
+    except Exception as e:
+        flash(f'Import error: {str(e)}', 'danger')
+
+    return redirect(url_for('settings'))
+
+
+@app.route('/api/export/full')
+def export_full():
+    """Export everything (settings + all accounts) as JSON download."""
+    session = db_service.get_session()
+    try:
+        credentials = session.query(EmailCredential).all()
+        accounts_data = [_export_account(session, cred) for cred in credentials]
+
+        export_data = {
+            'mailmind_export': _build_export_metadata('full'),
+            'settings': _export_settings(),
+            'accounts': accounts_data
+        }
+
+        response = app.response_class(
+            json.dumps(export_data, indent=2, ensure_ascii=False),
+            mimetype='application/json',
+            headers={'Content-Disposition': 'attachment; filename=mailmind-full-export.json'}
+        )
+        return response
+    finally:
+        session.close()
+
+
+@app.route('/api/import/full', methods=['POST'])
+def import_full():
+    """Import everything (settings + accounts) from JSON upload."""
+    try:
+        if 'file' not in request.files:
+            flash('No file selected', 'danger')
+            return redirect(url_for('settings'))
+
+        file = request.files['file']
+        if not file.filename:
+            flash('No file selected', 'danger')
+            return redirect(url_for('settings'))
+
+        data = json.loads(file.read().decode('utf-8'))
+
+        if 'mailmind_export' not in data:
+            flash('Invalid export file format', 'danger')
+            return redirect(url_for('settings'))
+
+        export_type = data['mailmind_export'].get('type', '')
+        if export_type != 'full':
+            flash('File is not a full export', 'danger')
+            return redirect(url_for('settings'))
+
+        # Import settings
+        if 'settings' in data:
+            save_config(data['settings'])
+
+        # Import accounts
+        session = db_service.get_session()
+        try:
+            imported = 0
+            for account_data in data.get('accounts', []):
+                email_address = account_data.get('email_address', '')
+                if not email_address:
+                    continue
+
+                credential = session.query(EmailCredential).filter_by(
+                    email_address=email_address
+                ).first()
+
+                if not credential:
+                    credential = EmailCredential(
+                        email_address=email_address,
+                        host=account_data.get('host', ''),
+                        port=account_data.get('port', 993),
+                        use_ssl=account_data.get('use_ssl', True),
+                        use_tls=account_data.get('use_tls', False),
+                        username=account_data.get('username', email_address),
+                        password=''
+                    )
+                    session.add(credential)
+                    session.flush()
+                else:
+                    credential.host = account_data.get('host', credential.host)
+                    credential.port = account_data.get('port', credential.port)
+                    credential.use_ssl = account_data.get('use_ssl', credential.use_ssl)
+                    credential.use_tls = account_data.get('use_tls', credential.use_tls)
+                    credential.username = account_data.get('username', credential.username)
+
+                _import_account_data(session, credential, account_data)
+                imported += 1
+
+            session.commit()
+            flash(f'Full import complete: {imported} account(s) imported. Please set passwords and API keys manually.', 'success')
+        except Exception as e:
+            session.rollback()
+            flash(f'Account import error: {str(e)}', 'danger')
+        finally:
+            session.close()
+
+    except json.JSONDecodeError:
+        flash('Invalid JSON file', 'danger')
+    except Exception as e:
+        flash(f'Import error: {str(e)}', 'danger')
+
+    return redirect(url_for('settings'))
+
+
+@app.route('/api/accounts/<int:id>/export')
+def export_account(id):
+    """Export a single account as JSON download."""
+    session = db_service.get_session()
+    try:
+        credential = session.query(EmailCredential).filter_by(id=id).first()
+        if not credential:
+            return jsonify({'error': 'Account not found'}), 404
+
+        export_data = {
+            'mailmind_export': _build_export_metadata('account'),
+            'accounts': [_export_account(session, credential)]
+        }
+
+        safe_name = re.sub(r'[^\w@.\-]', '_', credential.email_address)
+        response = app.response_class(
+            json.dumps(export_data, indent=2, ensure_ascii=False),
+            mimetype='application/json',
+            headers={'Content-Disposition': f'attachment; filename=mailmind-account-{safe_name}.json'}
+        )
+        return response
+    finally:
+        session.close()
+
+
+@app.route('/api/accounts/<int:id>/import', methods=['POST'])
+def import_account(id):
+    """Import account configuration from JSON upload."""
+    try:
+        if 'file' not in request.files:
+            flash('No file selected', 'danger')
+            return redirect(url_for('account_dashboard', id=id))
+
+        file = request.files['file']
+        if not file.filename:
+            flash('No file selected', 'danger')
+            return redirect(url_for('account_dashboard', id=id))
+
+        data = json.loads(file.read().decode('utf-8'))
+
+        if 'mailmind_export' not in data:
+            flash('Invalid export file format', 'danger')
+            return redirect(url_for('account_dashboard', id=id))
+
+        export_type = data['mailmind_export'].get('type', '')
+        if export_type not in ('account', 'full'):
+            flash('File does not contain account data', 'danger')
+            return redirect(url_for('account_dashboard', id=id))
+
+        accounts = data.get('accounts', [])
+        if not accounts:
+            flash('No account data found in file', 'danger')
+            return redirect(url_for('account_dashboard', id=id))
+
+        session = db_service.get_session()
+        try:
+            credential = session.query(EmailCredential).filter_by(id=id).first()
+            if not credential:
+                flash('Account not found', 'danger')
+                return redirect(url_for('list_accounts'))
+
+            _import_account_data(session, credential, accounts[0])
+            session.commit()
+            flash('Account configuration imported! Please verify passwords and API keys.', 'success')
+        except Exception as e:
+            session.rollback()
+            flash(f'Import error: {str(e)}', 'danger')
+        finally:
+            session.close()
+
+    except json.JSONDecodeError:
+        flash('Invalid JSON file', 'danger')
+    except Exception as e:
+        flash(f'Import error: {str(e)}', 'danger')
+
+    return redirect(url_for('account_dashboard', id=id))
+
+
 if __name__ == '__main__':
     # Convert FLASK_DEBUG to boolean
     flask_debug = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 'yes')

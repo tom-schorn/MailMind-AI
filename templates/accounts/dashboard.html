@@ -145,6 +145,19 @@
               <i class="bi bi-journal-text"></i> View Logs
             </a>
           </div>
+          <h5 class="card-title mt-3">Import / Export</h5>
+          <div class="d-flex gap-2 flex-wrap align-items-center">
+            <a href="{{ url_for('export_account', id=account.id) }}" class="btn btn-outline-primary btn-sm">
+              <i class="bi bi-download"></i> Export Account
+            </a>
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('accountImportFile').click()">
+              <i class="bi bi-upload"></i> Import Config
+            </button>
+            <form action="{{ url_for('import_account', id=account.id) }}" method="POST" enctype="multipart/form-data" class="d-none">
+              <input type="file" name="file" id="accountImportFile" accept=".json" onchange="if(confirm('This will replace all rules, labels, and settings for this account. Continue?')) this.form.submit()">
+            </form>
+            <span class="text-muted small"><i class="bi bi-shield-lock"></i> Passwords/API keys excluded from exports</span>
+          </div>
         </div>
       </div>
     </div>
