@@ -4,23 +4,20 @@ import hashlib
 import json
 import logging
 import threading
-import time
 from datetime import datetime
-from typing import Set, Dict, Optional
+from typing import Set, Optional
 
-from DatabaseService import EmailRule, EmailRuleApplication, LLMConfig, AccountHandlerConfig, WatcherReloadSignal
+from DatabaseService import EmailRule, EmailRuleApplication, LLMConfig, AccountHandlerConfig
 
 
 class AccountHandler:
     """
-    Manages email processing lifecycle for a single account.
+    Manages email processing state for a single account.
 
     Responsibilities:
     - Calculate and track rule hash for change detection
-    - Maintain in-memory cache of processed UIDs
-    - Load LLM configuration
-    - Poll for reload signals
-    - Manage folder watcher threads
+    - Maintain thread-safe in-memory cache of processed UIDs
+    - Load LLM and handler configuration
     """
 
     def __init__(self, credential, session_factory, config, logger: logging.Logger):
@@ -41,15 +38,10 @@ class AccountHandler:
         # State
         self.rule_hash = None
         self.processed_uids: Set[str] = set()
+        self._uids_lock = threading.Lock()
         self.llm_config: Optional[LLMConfig] = None
         self.handler_config: Optional[AccountHandlerConfig] = None
         self.persistent_tracking = True
-
-        # Thread management
-        self.stop_event = threading.Event()
-        self.imap_clients: Dict[str, object] = {}
-        self.folder_threads = []
-        self.spam_monitor_thread = None
 
     def calculate_rule_hash(self) -> str:
         """
@@ -106,7 +98,8 @@ class AccountHandler:
         Only loads if persistent_tracking is enabled.
         """
         if not self.persistent_tracking:
-            self.processed_uids = set()
+            with self._uids_lock:
+                self.processed_uids = set()
             self.logger.info("Session-only tracking enabled, not loading UIDs from DB")
             return
 
@@ -118,9 +111,11 @@ class AccountHandler:
                 rule_config_hash=self.rule_hash
             ).all()
 
-            self.processed_uids = {app.email_uid for app in applications}
+            new_uids = {app.email_uid for app in applications}
+            with self._uids_lock:
+                self.processed_uids = new_uids
             self.logger.info(
-                f"Loaded {len(self.processed_uids)} processed UIDs for hash {self.rule_hash[:8]}"
+                f"Loaded {len(new_uids)} processed UIDs for hash {self.rule_hash[:8]}"
             )
 
         finally:
@@ -136,7 +131,8 @@ class AccountHandler:
         Returns:
             True if already processed
         """
-        return uid in self.processed_uids
+        with self._uids_lock:
+            return uid in self.processed_uids
 
     def mark_processed(self, uid: str, rule_id: int, actions_taken: str, email_subject: str = ""):
         """
@@ -149,8 +145,10 @@ class AccountHandler:
             email_subject: Email subject line
         """
         self.logger.debug(f"Marking UID {uid} as processed (rule_id={rule_id})")
-        self.processed_uids.add(uid)
-        self.logger.debug(f"Cache size after mark: {len(self.processed_uids)}")
+        with self._uids_lock:
+            self.processed_uids.add(uid)
+            cache_size = len(self.processed_uids)
+        self.logger.debug(f"Cache size after mark: {cache_size}")
 
         if self.persistent_tracking:
             session = self.session_factory()
@@ -220,86 +218,9 @@ class AccountHandler:
         finally:
             session.close()
 
-    def check_reload_signal(self) -> bool:
-        """
-        Check if reload signal was set for this account.
-
-        Returns:
-            True if reload signal exists (and was deleted)
-        """
-        self.logger.debug(f"Checking reload signal for credential {self.credential.id}")
-        session = self.session_factory()
-        try:
-            signal = session.query(WatcherReloadSignal).filter_by(
-                credential_id=self.credential.id
-            ).first()
-
-            if signal:
-                session.delete(signal)
-                session.commit()
-                self.logger.info(f"Reload signal detected for account {self.credential.id}")
-                return True
-
-            return False
-
-        except Exception as e:
-            self.logger.error(f"Error checking reload signal: {e}")
-            return False
-        finally:
-            session.close()
-
-    def run(self):
-        """
-        Main lifecycle loop: Start → Watch → Reload → Restart.
-
-        NOTE: This method is currently not used. Watcher management is handled by
-        EMailService._email_watcher_loop() which also manages reload signals.
-
-        This will be fully activated in v2.0.0 when AccountHandler takes over
-        complete watcher lifecycle management.
-
-        For now, this method only loads handler state and waits for stop signal.
-        """
-        self.logger.info(f"Starting AccountHandler for {self.credential.email_address}")
-
-        while not self.stop_event.is_set():
-            try:
-                # Load handler state (for future use in v2.0.0)
-                self.rule_hash = self.calculate_rule_hash()
-                self.load_handler_config()
-                self.load_processed_uids()
-                self.load_llm_config()
-
-                # NOTE: In v2.0.0, this will start folder watchers:
-                # self._start_folder_watchers()
-                # self._start_spam_monitor()
-
-                # Wait for stop signal
-                # NOTE: Reload signal checking is handled by EMailService._email_watcher_loop()
-                self.stop_event.wait()
-
-            except Exception as e:
-                self.logger.error(f"Error in AccountHandler main loop: {e}", exc_info=True)
-                time.sleep(30)  # Wait before retrying
-
-        self.logger.info(f"AccountHandler stopped for {self.credential.email_address}")
-
-    def stop(self):
-        """Stop the account handler and all watchers."""
-        self.logger.info(f"Stopping AccountHandler for {self.credential.email_address}")
-        self.stop_event.set()
-
-    # NOTE: These methods would be fully implemented in v2.0.0
-    # For now, EMailService still manages the actual folder watchers
-
-    def _start_folder_watchers(self):
-        """Start folder watcher threads (placeholder for v2.0.0)."""
-        pass
-
-    def _start_spam_monitor(self):
-        """Start spam learning monitor thread (placeholder for v2.0.0)."""
-        pass
-
-    def _stop_all_watchers(self):
-        """Stop all folder watcher and spam monitor threads (placeholder for v2.0.0)."""
-        pass
+    def refresh_state(self):
+        """Refresh all handler state (rule hash, config, UIDs, LLM)."""
+        self.rule_hash = self.calculate_rule_hash()
+        self.load_handler_config()
+        self.load_processed_uids()
+        self.load_llm_config()
