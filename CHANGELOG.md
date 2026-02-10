@@ -165,6 +165,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.1-pre] - 2026-02-10
+
+### Fixed
+- make database migration version tracking idempotent
+
+
 ## [2.8.0-pre] - 2026-02-10
 
 ### Added
