@@ -230,6 +230,61 @@
           </form>
         </div>
       </div>
+
+      <!-- Import / Export Section -->
+      <div class="card mt-4">
+        <div class="card-body">
+          <h5 class="card-title">Import / Export</h5>
+
+          <div class="row g-3">
+            <!-- Settings Export -->
+            <div class="col-md-6">
+              <div class="card border">
+                <div class="card-body">
+                  <h6>Settings</h6>
+                  <p class="text-muted small mb-3">Export or import application settings (config.json).</p>
+                  <div class="d-flex gap-2 flex-wrap">
+                    <a href="{{ url_for('export_settings') }}" class="btn btn-outline-primary btn-sm">
+                      <i class="bi bi-download"></i> Export Settings
+                    </a>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('settingsImportFile').click()">
+                      <i class="bi bi-upload"></i> Import Settings
+                    </button>
+                  </div>
+                  <form action="{{ url_for('import_settings') }}" method="POST" enctype="multipart/form-data" id="settingsImportForm" class="d-none">
+                    <input type="file" name="file" id="settingsImportFile" accept=".json" onchange="this.form.submit()">
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            <!-- Full Export -->
+            <div class="col-md-6">
+              <div class="card border">
+                <div class="card-body">
+                  <h6>Full Backup</h6>
+                  <p class="text-muted small mb-3">Export or import everything (settings + all accounts with rules, labels, etc.).</p>
+                  <div class="d-flex gap-2 flex-wrap">
+                    <a href="{{ url_for('export_full') }}" class="btn btn-outline-success btn-sm">
+                      <i class="bi bi-download"></i> Full Export
+                    </a>
+                    <button type="button" class="btn btn-outline-warning btn-sm" onclick="document.getElementById('fullImportFile').click()">
+                      <i class="bi bi-upload"></i> Full Import
+                    </button>
+                  </div>
+                  <form action="{{ url_for('import_full') }}" method="POST" enctype="multipart/form-data" id="fullImportForm" class="d-none">
+                    <input type="file" name="file" id="fullImportFile" accept=".json" onchange="if(confirm('This will overwrite existing settings and account configurations. Continue?')) this.form.submit()">
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="alert alert-warning mt-3 mb-0">
+            <i class="bi bi-shield-lock"></i> <strong>Security:</strong> Passwords and API keys are never included in exports. After importing, you must set them manually.
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
